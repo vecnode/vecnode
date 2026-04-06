@@ -76,47 +76,47 @@ fetch_repos() {
 
 REPOS=$(fetch_repos)
 
-if [[ -z "$REPOS" ]]; then
-  echo "[INFO] No repositories found for '$GITHUB_USER'."
-  exit 0
-fi
-
-TOTAL=$(echo "$REPOS" | wc -l)
 CLONED=0
 PULLED=0
 FAILED=0
-IDX=0
 
-while IFS= read -r repo_url; do
-  (( IDX++ )) || true
-  # derive folder name from URL  (strip .git suffix)
-  repo_name=$(basename "$repo_url" .git)
-  repo_path="$TARGET_DIR/$repo_name"
+if [[ -z "$REPOS" ]]; then
+  echo "[INFO] No personal repositories found for '$GITHUB_USER'."
+else
+  TOTAL=$(echo "$REPOS" | wc -l)
+  IDX=0
 
-  echo "[$IDX/$TOTAL] $repo_name"
+  while IFS= read -r repo_url; do
+    (( IDX++ )) || true
+    # derive folder name from URL (strip .git suffix)
+    repo_name=$(basename "$repo_url" .git)
+    repo_path="$TARGET_DIR/$repo_name"
 
-  if [[ -d "$repo_path/.git" ]]; then
-    # already cloned – pull latest changes
-    if git -C "$repo_path" pull --ff-only --quiet 2>&1; then
-      echo "         ✔ pulled"
-      (( PULLED++ )) || true
+    echo "[$IDX/$TOTAL] $repo_name"
+
+    if [[ -d "$repo_path/.git" ]]; then
+      # already cloned - pull latest changes
+      if git -C "$repo_path" pull --ff-only --quiet 2>&1; then
+        echo "         ✔ pulled"
+        (( PULLED++ )) || true
+      else
+        echo "         ✘ pull failed (skipped)"
+        (( FAILED++ )) || true
+      fi
     else
-      echo "         ✘ pull failed (skipped)"
-      (( FAILED++ )) || true
+      # fresh clone
+      if git clone --quiet "$repo_url" "$repo_path" 2>&1; then
+        echo "         ✔ cloned"
+        (( CLONED++ )) || true
+      else
+        echo "         ✘ clone failed (skipped)"
+        (( FAILED++ )) || true
+      fi
     fi
-  else
-    # fresh clone
-    if git clone --quiet "$repo_url" "$repo_path" 2>&1; then
-      echo "         ✔ cloned"
-      (( CLONED++ )) || true
-    else
-      echo "         ✘ clone failed (skipped)"
-      (( FAILED++ )) || true
-    fi
-  fi
-done <<< "$REPOS"
+  done <<< "$REPOS"
+fi
 
 echo ""
 echo "────────────────────────────────────────"
-echo " Done.  cloned=$CLONED  pulled=$PULLED  failed=$FAILED"
+echo " Done. cloned=$CLONED pulled=$PULLED failed=$FAILED"
 echo "────────────────────────────────────────"
