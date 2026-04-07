@@ -1,4 +1,4 @@
-# VecNode Docker
+# Docker (vecnode)
 
 Lightweight Alpine Linux container that clones vecnode repository and runs download scripts.
 
