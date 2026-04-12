@@ -6,7 +6,9 @@ set -euo pipefail
 # Clone all public repositories from a fixed list of GitHub organizations.
 #
 # Usage:
-#   ./download_all_orgs.sh
+#   ./download_all_orgs.sh [org1 org2 org3 ...]
+#   If no organizations are provided, uses default list:
+#     sttera-studio atomic-media-studio osd-network arpsci
 #
 # Downloads into: ~/Desktop/git-backup-orgs-DD-MM-YYYY-HH-MM-SS/
 # ---------------------------------------------------------------------------
@@ -15,12 +17,16 @@ set -euo pipefail
 TIMESTAMP="$(date '+%d-%m-%Y-%H-%M-%S')"
 TARGET_DIR="$HOME/Desktop/git-backup-orgs-${TIMESTAMP}"
 PER_PAGE=100   # max allowed by GitHub API
-ORG_LINKS=(
-	"https://github.com/sttera-studio"
-	"https://github.com/atomic-media-studio"
-	"https://github.com/osd-network"
-	"https://github.com/arpsci"
-)
+if [[ "$#" -eq 0 ]]; then
+	ORG_LIST=(
+		"sttera-studio"
+		"atomic-media-studio"
+		"osd-network"
+		"arpsci"
+	)
+else
+	ORG_LIST=("$@")
+fi
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── OS check ─────────────────────────────────────────────────────────────────
@@ -44,33 +50,35 @@ done
 fetch_org_repos() {
 	local org_name="$1"
 	local page=1
-	local repos=()
+	local list_file="$2"
 
 	while true; do
 		local url="https://api.github.com/orgs/${org_name}/repos?per_page=${PER_PAGE}&page=${page}&type=public"
-		local response
+		local json_file
+		json_file="$TMP_BASE/${org_name}-${page}.json"
 
-		response=$(curl -fsSL -H "Accept: application/vnd.github+json" "$url")
+		if ! curl -fsSL -H "Accept: application/vnd.github+json" "$url" >"$json_file"; then
+			echo "         [FAIL] API request failed for $org_name (page $page)"
+			(( FAILED++ )) || true
+			return 1
+		fi
 
-		local batch
-		batch=$(echo "$response" | jq -r '.[].clone_url')
+		local batch_count
+		batch_count="$(jq -r '.[].clone_url' "$json_file" | sed '/^$/d' | wc -l | tr -d ' ')"
+		[[ "$batch_count" == "0" ]] && break
 
-		[[ -z "$batch" ]] && break
-
-		repos+=($batch)
+		if ! jq -r '.[].clone_url' "$json_file" >>"$list_file"; then
+			echo "         [FAIL] Failed parsing JSON for $org_name"
+			(( FAILED++ )) || true
+			return 1
+		fi
 
 		local count
-		count=$(echo "$response" | jq 'length')
+		count=$(jq 'length' "$json_file")
 		(( count < PER_PAGE )) && break
 
 		(( page++ ))
 	done
-
-	if (( ${#repos[@]} == 0 )); then
-		return
-	fi
-
-	printf '%s\n' "${repos[@]}"
 }
 
 mkdir -p "$TARGET_DIR"
@@ -81,24 +89,41 @@ PULLED=0
 FAILED=0
 ORGS_COUNT=0
 ORG_REPOS_TOTAL=0
+ORGS_TOTAL=${#ORG_LIST[@]}
 
-for org_link in "${ORG_LINKS[@]}"; do
-	org_name="${org_link##*/}"
+TMP_BASE="$(mktemp -d "${TMPDIR:-/tmp}/vecnode-orgs-XXXXXX")"
+cleanup() {
+  rm -rf "$TMP_BASE" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+for org_name in "${ORG_LIST[@]}"; do
 	(( ORGS_COUNT++ )) || true
 
 	org_dir="$TARGET_DIR/$org_name"
 	mkdir -p "$org_dir"
 
 	echo ""
-	echo "[ORG $ORGS_COUNT/${#ORG_LINKS[@]}] $org_name"
+	echo "[ORG $ORGS_COUNT/$ORGS_TOTAL] $org_name"
 
-	org_repos=$(fetch_org_repos "$org_name")
-	if [[ -z "$org_repos" ]]; then
+	org_list_file="$TMP_BASE/${org_name}-repos.txt"
+	rm -f "$org_list_file"
+
+	if ! fetch_org_repos "$org_name" "$org_list_file"; then
+		continue
+	fi
+
+	if [[ ! -f "$org_list_file" ]]; then
 		echo "         no public repositories"
 		continue
 	fi
 
-	org_total=$(echo "$org_repos" | wc -l)
+	org_total="$(wc -l <"$org_list_file" | tr -d ' ')"
+	if [[ "$org_total" == "0" ]]; then
+		echo "         no public repositories"
+		continue
+	fi
+
 	(( ORG_REPOS_TOTAL += org_total )) || true
 	org_idx=0
 
@@ -110,28 +135,28 @@ for org_link in "${ORG_LINKS[@]}"; do
 		echo "         [$org_idx/$org_total] $repo_name"
 
 		if [[ -d "$repo_path/.git" ]]; then
-			if git -C "$repo_path" pull --ff-only --quiet 2>&1; then
-				echo "                  ✔ pulled"
+			if git -C "$repo_path" pull --ff-only --quiet >/dev/null 2>&1; then
+				echo "                  [OK] pulled"
 				(( PULLED++ )) || true
 			else
-				echo "                  ✘ pull failed (skipped)"
+				echo "                  [FAIL] pull failed (skipped)"
 				(( FAILED++ )) || true
 			fi
 		else
-			if git clone --quiet "$repo_url" "$repo_path" 2>&1; then
-				echo "                  ✔ cloned"
+			if git clone --quiet "$repo_url" "$repo_path" >/dev/null 2>&1; then
+				echo "                  [OK] cloned"
 				(( CLONED++ )) || true
 			else
-				echo "                  ✘ clone failed (skipped)"
+				echo "                  [FAIL] clone failed (skipped)"
 				(( FAILED++ )) || true
 			fi
 		fi
-	done <<< "$org_repos"
+	done <"$org_list_file"
 done
 
 echo ""
-echo "────────────────────────────────────────"
+echo "----------------------------------------"
 echo " Done. cloned=$CLONED pulled=$PULLED failed=$FAILED"
 echo "       orgs=$ORGS_COUNT org_repos=$ORG_REPOS_TOTAL"
-echo "────────────────────────────────────────"
+echo "----------------------------------------"
 
