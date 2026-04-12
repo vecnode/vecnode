@@ -6,7 +6,8 @@ REM download_all_repos.bat
 REM Clone all public repositories from a GitHub account.
 REM
 REM Usage:
-REM   Double-click this file, or run: download_all_repos.bat
+REM   download_all_repos.bat [username]
+REM   If no username is provided, defaults to: vecnode
 REM
 REM Downloads into: %%USERPROFILE%%\Desktop\git-backup-DD-MM-YYYY-HH-MM-SS\
 REM Requirements (Windows):
@@ -15,7 +16,8 @@ REM   - curl
 REM   - jq
 REM ---------------------------------------------------------------------------
 
-set "GITHUB_USER=vecnode"
+set "GITHUB_USER=%~1"
+if not defined GITHUB_USER set "GITHUB_USER=vecnode"
 set "PER_PAGE=100"
 
 set "TS_FILE=%TEMP%\vecnode-ts-%RANDOM%-%RANDOM%.txt"

@@ -6,7 +6,9 @@ REM download_all_orgs.bat
 REM Clone all public repositories from a fixed list of GitHub organizations.
 REM
 REM Usage:
-REM   Double-click this file, or run: download_all_orgs.bat
+REM   download_all_orgs.bat [org1 org2 org3 ...]
+REM   If no organizations are provided, uses default list:
+REM     sttera-studio atomic-media-studio osd-network arpsci
 REM
 REM Downloads into: %%USERPROFILE%%\Desktop\git-backup-orgs-DD-MM-YYYY-HH-MM-SS\
 REM Requirements (Windows):
@@ -16,7 +18,11 @@ REM   - jq
 REM ---------------------------------------------------------------------------
 
 set "PER_PAGE=100"
-set "ORG_LINKS=sttera-studio atomic-media-studio osd-network arpsci"
+if "%~1"=="" (
+    set "ORG_LINKS=sttera-studio atomic-media-studio osd-network arpsci"
+) else (
+    set "ORG_LINKS=%*"
+)
 
 set "TS_FILE=%TEMP%\vecnode-ts-%RANDOM%-%RANDOM%.txt"
 powershell -NoProfile -Command "Get-Date -Format 'dd-MM-yyyy-HH-mm-ss'" > "%TS_FILE%"
