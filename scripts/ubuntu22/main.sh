@@ -16,6 +16,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ---------------------------------------------------------------------------
+# HEADER & REQUIREMENTS CHECK
+# ---------------------------------------------------------------------------
+
 clear
 echo ""
 echo "# ============================"
@@ -32,6 +36,42 @@ for cmd in git curl jq; do
   fi
 done
 
+# ---------------------------------------------------------------------------
+# MAIN MENU - CHOOSE OPERATION
+# ---------------------------------------------------------------------------
+
+while true; do
+  echo ""
+  echo "What would you like to do?"
+  echo "  1 = Backup GitHub"
+  echo "  2 = Silverbullet"
+  echo ""
+  read -r -p "Enter your choice (1 or 2): " MAIN_CHOICE
+
+  if [[ "$MAIN_CHOICE" == "1" ]]; then
+    echo ""
+    break
+  fi
+
+  if [[ "$MAIN_CHOICE" == "2" ]]; then
+    echo ""
+    "$SCRIPT_DIR/run_silverbullet.sh"
+    exit 0
+  fi
+
+  echo "[ERROR] Invalid choice. Please enter 1 or 2."
+done
+
+# ---------------------------------------------------------------------------
+# GITHUB BACKUP - USERNAME PROMPT
+# ---------------------------------------------------------------------------
+
+echo "# ============================"
+echo "# vecnode"
+echo "# GitHub Repository Backup"
+echo "# ============================"
+echo ""
+
 while true; do
   echo ""
   read -r -p "Enter GitHub username: " GITHUB_USERNAME
@@ -44,6 +84,10 @@ done
 
 echo "[INFO] GitHub username set to: ${GITHUB_USERNAME}"
 echo ""
+
+# ---------------------------------------------------------------------------
+# GITHUB BACKUP - SOURCE CHOICE
+# ---------------------------------------------------------------------------
 
 while true; do
   echo ""
@@ -84,6 +128,10 @@ while true; do
 
   echo "[ERROR] Invalid choice. Please enter 1, 2, or 3."
 done
+
+# ---------------------------------------------------------------------------
+# COMPLETION
+# ---------------------------------------------------------------------------
 
 echo ""
 echo "# ============================"

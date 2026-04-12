@@ -3,13 +3,17 @@ set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # run_silverbullet.sh
-# Build and run SilverBullet using Docker from a specified directory.
+# Run SilverBullet using Docker latest image.
 #
 # Usage:
 #   ./run_silverbullet.sh
 #
 # Requirements (Linux):
 #   - docker
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# DOCKER CHECK & SETUP
 # ---------------------------------------------------------------------------
 
 clear
@@ -42,123 +46,98 @@ fi
 echo "[OK] Docker daemon is running."
 echo ""
 
-normalize_path_input() {
-  local raw="$1"
-  local first_char=""
-  local last_char=""
+# ---------------------------------------------------------------------------
+# SILVERBULLET SPACE SETUP
+# ---------------------------------------------------------------------------
 
-  # Trim one pair of matching surrounding quotes if present.
-  if (( ${#raw} >= 2 )); then
-    first_char="${raw:0:1}"
-    last_char="${raw: -1}"
-    if [[ "$first_char" == '"' && "$last_char" == '"' ]] || [[ "$first_char" == "'" && "$last_char" == "'" ]]; then
-      raw="${raw:1:${#raw}-2}"
-    fi
+SB_SPACE_PATH="$HOME/silverbullet-space"
+
+if [[ ! -d "${SB_SPACE_PATH}" ]]; then
+  echo "[INFO] Space folder does not exist, creating it."
+  if ! mkdir -p "${SB_SPACE_PATH}"; then
+    echo "[ERROR] Failed to create space folder: ${SB_SPACE_PATH}"
+    exit 1
   fi
+  echo "[OK] Created: ${SB_SPACE_PATH}"
+else
+  echo "[OK] Space folder exists: ${SB_SPACE_PATH}"
+fi
 
-  # Remove trailing slash for consistent checks.
-  raw="${raw%/}"
-  printf '%s' "$raw"
-}
+echo ""
 
-detect_desktop_dir() {
-  local desktop_path=""
-
-  if command -v xdg-user-dir >/dev/null 2>&1; then
-    desktop_path="$(xdg-user-dir DESKTOP 2>/dev/null || true)"
-  fi
-
-  if [[ -z "$desktop_path" || "$desktop_path" == "$HOME" ]]; then
-    desktop_path="$HOME/Desktop"
-  fi
-
-  if [[ ! -d "$desktop_path" ]]; then
-    desktop_path="$HOME/Desktop"
-  fi
-
-  printf '%s' "$desktop_path"
-}
+# ---------------------------------------------------------------------------
+# OPTIONAL SYNC FROM ANOTHER FOLDER
+# ---------------------------------------------------------------------------
 
 while true; do
   echo ""
-  read -r -p "Enter path to SilverBullet repository: " SILVERBULLET_PATH
-  SILVERBULLET_PATH="$(normalize_path_input "$SILVERBULLET_PATH")"
-  if [[ -z "${SILVERBULLET_PATH}" ]]; then
-    echo "[ERROR] Path cannot be empty."
-    continue
+  read -r -p "Do you want to sync markdown files from another folder? (y/n): " SYNC_CHOICE
+  
+  if [[ "$SYNC_CHOICE" == "y" || "$SYNC_CHOICE" == "Y" ]]; then
+    while true; do
+      echo ""
+      read -r -p "Enter path to source markdown folder: " SOURCE_PATH
+      
+      # Expand ~ to home directory
+      SOURCE_PATH="${SOURCE_PATH/#\~/$HOME}"
+      
+      if [[ -z "${SOURCE_PATH}" ]]; then
+        echo "[ERROR] Path cannot be empty."
+        continue
+      fi
+      
+      if [[ ! -d "${SOURCE_PATH}" ]]; then
+        echo "[ERROR] Path does not exist: ${SOURCE_PATH}"
+        continue
+      fi
+      
+      echo "[INFO] Syncing markdown files from: ${SOURCE_PATH}"
+      
+      # Copy all markdown files (.md) from source to destination
+      if cp "${SOURCE_PATH}"/*.md "${SB_SPACE_PATH}/" 2>/dev/null; then
+        echo "[OK] Markdown files synced successfully."
+      else
+        echo "[WARNING] No markdown files found to sync, or sync encountered an issue."
+      fi
+      
+      break
+    done
+    break
+  elif [[ "$SYNC_CHOICE" == "n" || "$SYNC_CHOICE" == "N" ]]; then
+    echo "[INFO] Skipping sync."
+    break
+  else
+    echo "[ERROR] Invalid choice. Please enter 'y' or 'n'."
   fi
-
-  if [[ ! -d "${SILVERBULLET_PATH}" ]]; then
-    echo "[ERROR] Path does not exist: ${SILVERBULLET_PATH}"
-    continue
-  fi
-
-  if [[ ! -f "${SILVERBULLET_PATH}/Dockerfile" ]]; then
-    echo "[ERROR] This doesn't appear to be a SilverBullet repository."
-    echo "[ERROR] Missing: Dockerfile in ${SILVERBULLET_PATH}"
-    continue
-  fi
-
-  break
 done
 
-echo "[OK] Valid SilverBullet repository detected."
 echo ""
 
-DESKTOP_DIR="$(detect_desktop_dir)"
-DEFAULT_SB_SPACE_PATH="$DESKTOP_DIR/silverbullet"
+# ---------------------------------------------------------------------------
+# DOCKER CONTAINER SETUP & RUN
+# ---------------------------------------------------------------------------
 
-while true; do
-  read -r -p "Enter path to SilverBullet space folder (default '${DEFAULT_SB_SPACE_PATH}'): " SB_SPACE_PATH
-  if [[ -z "${SB_SPACE_PATH}" ]]; then
-    SB_SPACE_PATH="$DEFAULT_SB_SPACE_PATH"
-  fi
-  SB_SPACE_PATH="$(normalize_path_input "$SB_SPACE_PATH")"
-  if [[ -z "${SB_SPACE_PATH}" ]]; then
-    echo "[ERROR] Space folder path cannot be empty."
-    continue
-  fi
+echo "[INFO] Stopping any existing SilverBullet container."
+docker rm -f silverbullet >/dev/null 2>&1 || true
 
-  if [[ ! -d "${SB_SPACE_PATH}" ]]; then
-    echo "[INFO] Space folder does not exist, creating it."
-    if ! mkdir -p "${SB_SPACE_PATH}"; then
-      echo "[ERROR] Failed to create space folder: ${SB_SPACE_PATH}"
-      exit 1
-    fi
-  fi
-
-  break
-done
-
-SB_PORT="3000"
-read -r -p "Enter host port (default 3000): " INPUT_PORT
-if [[ -n "${INPUT_PORT}" ]]; then
-  SB_PORT="${INPUT_PORT}"
-fi
-
-echo "[INFO] Building Docker image."
-echo ""
-if ! docker build -t silverbullet:local "${SILVERBULLET_PATH}"; then
-  echo "[ERROR] Docker build failed"
-  exit 1
-fi
-
-echo "[OK] Docker image built successfully."
+echo "[INFO] Starting SilverBullet container from latest image."
+echo "[INFO] SilverBullet will be available at http://localhost:3000"
 echo ""
 
-echo "[INFO] Starting SilverBullet container."
-echo "[INFO] SilverBullet will be available at http://localhost:${SB_PORT}"
-echo ""
-
-docker rm -f silverbullet-local >/dev/null 2>&1 || true
-
-if ! docker run -d --name silverbullet-local -p "${SB_PORT}:3000" --mount type=bind,source="${SB_SPACE_PATH}",target=/space --entrypoint /silverbullet silverbullet:local /space >/dev/null; then
+if ! docker run -d --rm \
+  --name silverbullet \
+  -p 3000:3000 \
+  -v "${SB_SPACE_PATH}":/space \
+  -e SB_USER="user:password" \
+  ghcr.io/silverbulletmd/silverbullet:latest >/dev/null; then
   echo "[ERROR] Docker run failed"
   exit 1
 fi
 
-echo "[OK] Container started: silverbullet-local"
-echo "[INFO] Open: http://localhost:${SB_PORT}"
+echo "[OK] Container started: silverbullet"
+echo "[INFO] Open: http://localhost:3000"
+echo "[INFO] Username: user"
+echo "[INFO] Password: password"
 echo "[INFO] Data folder: ${SB_SPACE_PATH}"
-echo "[INFO] Stop with: docker stop silverbullet-local"
-echo "[INFO] Logs with: docker logs -f silverbullet-local"
+echo "[INFO] Stop with: docker stop silverbullet"
+echo "[INFO] Logs with: docker logs -f silverbullet"
