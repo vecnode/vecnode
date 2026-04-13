@@ -16,6 +16,10 @@ REM   - curl
 REM   - jq
 REM ---------------------------------------------------------------------------
 
+REM ---------------------------------------------------------------------------
+REM CONFIGURATION
+REM ---------------------------------------------------------------------------
+
 set "GITHUB_USER=%~1"
 if not defined GITHUB_USER set "GITHUB_USER=vecnode"
 set "PER_PAGE=100"
@@ -28,16 +32,30 @@ if exist "%TS_FILE%" del /q "%TS_FILE%" >nul 2>nul
 if not defined TIMESTAMP set "TIMESTAMP=%RANDOM%-%RANDOM%"
 set "TARGET_DIR=%USERPROFILE%\Desktop\git-backup-%TIMESTAMP%"
 
+REM ---------------------------------------------------------------------------
+REM OS CHECK
+REM ---------------------------------------------------------------------------
+
+if /i not "%OS%"=="Windows_NT" (
+    echo [ERROR] This script is designed for Windows ^(detected: %OS%^).
+    exit /b 1
+)
+
+REM ---------------------------------------------------------------------------
+REM DEPENDENCY CHECK
+REM ---------------------------------------------------------------------------
+
 for %%C in (git curl jq) do (
     where %%C >nul 2>nul
     if errorlevel 1 (
         echo [ERROR] Required command not found: %%C
+        echo         Install it with:  winget install %%C
         exit /b 1
     )
 )
 
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
-echo [INFO] Syncing repos for "%GITHUB_USER%" into "%TARGET_DIR%"
+echo [INFO] Syncing repos for '%GITHUB_USER%' into '%TARGET_DIR%'
 echo.
 
 set "TMP_BASE=%TEMP%\vecnode-repos-%RANDOM%-%RANDOM%"
@@ -77,14 +95,19 @@ set /a PULLED=0
 set /a FAILED=0
 
 if not exist "%REPO_LIST_FILE%" (
-    echo [INFO] No personal repositories found for "%GITHUB_USER%".
-    goto :summary
+    echo [INFO] No personal repositories found for '%GITHUB_USER%'.
+    goto :cleanup_and_summary
 )
 
 for /f %%T in ('find /c /v "" ^< "%REPO_LIST_FILE%"') do set "TOTAL=%%T"
 if "%TOTAL%"=="0" (
-    echo [INFO] No personal repositories found for "%GITHUB_USER%".
-    goto :summary
+    echo [INFO] No personal repositories found for '%GITHUB_USER%'.
+    echo.
+    echo ----------------------------------------
+    echo  Done. cloned=%CLONED% pulled=%PULLED% failed=%FAILED%
+    echo ----------------------------------------
+    if exist "%TMP_BASE%" rmdir /s /q "%TMP_BASE%" >nul 2>nul
+    exit /b 0
 )
 
 set /a IDX=0
@@ -116,7 +139,7 @@ for /f "usebackq delims=" %%R in ("%REPO_LIST_FILE%") do (
     )
 )
 
-:summary
+:cleanup_and_summary
 echo.
 echo ----------------------------------------
 echo  Done. cloned=%CLONED% pulled=%PULLED% failed=%FAILED%
@@ -124,3 +147,4 @@ echo ----------------------------------------
 
 if exist "%TMP_BASE%" rmdir /s /q "%TMP_BASE%" >nul 2>nul
 endlocal
+exit /b 0

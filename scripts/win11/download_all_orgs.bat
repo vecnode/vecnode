@@ -17,6 +17,10 @@ REM   - curl
 REM   - jq
 REM ---------------------------------------------------------------------------
 
+REM ---------------------------------------------------------------------------
+REM CONFIGURATION
+REM ---------------------------------------------------------------------------
+
 set "PER_PAGE=100"
 if "%~1"=="" (
     set "ORG_LINKS=sttera-studio atomic-media-studio osd-network arpsci"
@@ -32,16 +36,30 @@ if exist "%TS_FILE%" del /q "%TS_FILE%" >nul 2>nul
 if not defined TIMESTAMP set "TIMESTAMP=%RANDOM%-%RANDOM%"
 set "TARGET_DIR=%USERPROFILE%\Desktop\git-backup-orgs-%TIMESTAMP%"
 
+REM ---------------------------------------------------------------------------
+REM OS CHECK
+REM ---------------------------------------------------------------------------
+
+if /i not "%OS%"=="Windows_NT" (
+    echo [ERROR] This script is designed for Windows ^(detected: %OS%^).
+    exit /b 1
+)
+
+REM ---------------------------------------------------------------------------
+REM DEPENDENCY CHECK
+REM ---------------------------------------------------------------------------
+
 for %%C in (git curl jq) do (
     where %%C >nul 2>nul
     if errorlevel 1 (
         echo [ERROR] Required command not found: %%C
+        echo         Install it with:  winget install %%C
         exit /b 1
     )
 )
 
 if not exist "%TARGET_DIR%" mkdir "%TARGET_DIR%"
-echo [INFO] Syncing hardcoded organizations into "%TARGET_DIR%"
+echo [INFO] Syncing hardcoded organizations into '%TARGET_DIR%'
 
 set /a CLONED=0
 set /a PULLED=0
@@ -57,7 +75,7 @@ if not exist "%TMP_BASE%" mkdir "%TMP_BASE%"
 
 for %%O in (%ORG_LINKS%) do (
     set /a ORGS_COUNT+=1
-    call :process_org %%O
+    call :process_org "%%~O"
 )
 
 echo.
@@ -126,7 +144,7 @@ set /a ORG_IDX=0
 
 for /f "usebackq delims=" %%R in ("%ORG_LIST_FILE%") do (
     set /a ORG_IDX+=1
-    for %%N in (%%~nR) do set "REPO_NAME=%%N"
+    for %%N in (%%~nR) do set "REPO_NAME=%%~N"
     set "REPO_PATH=%ORG_DIR%\!REPO_NAME!"
 
     echo          [!ORG_IDX!/%ORG_TOTAL%] !REPO_NAME!

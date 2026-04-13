@@ -4,11 +4,8 @@ setlocal EnableExtensions EnableDelayedExpansion
 REM ---------------------------------------------------------------------------
 REM main.bat
 REM Entry point for vecnode - GitHub repository backup tool
-REM
-REM This script prompts for user input and coordinates the backup process.
-REM
 REM Usage:
-REM   Double-click this file, or run: main.bat
+REM   main.bat
 REM
 REM Requirements (Windows):
 REM   - git
@@ -24,16 +21,52 @@ echo # GitHub Repository Backup
 echo # ============================
 echo.
 
-REM Check for required commands
 for %%C in (git curl jq) do (
     where %%C >nul 2>nul
     if errorlevel 1 (
         echo [ERROR] Required command not found: %%C
         echo Please install: git, curl, and jq
-        pause
         exit /b 1
     )
 )
+
+REM ---------------------------------------------------------------------------
+REM MAIN MENU - CHOOSE OPERATION
+REM ---------------------------------------------------------------------------
+
+:main_menu
+echo.
+echo What would you like to do?
+echo   1 = Backup GitHub
+echo   2 = Silverbullet
+echo.
+set "MAIN_CHOICE="
+set /p MAIN_CHOICE="Enter your choice (1 or 2): "
+
+if "%MAIN_CHOICE%"=="1" (
+    echo.
+    goto :github_header
+)
+
+if "%MAIN_CHOICE%"=="2" (
+    echo.
+    call "%~dp0run_silverbullet.bat"
+    exit /b 0
+)
+
+echo [ERROR] Invalid choice. Please enter 1 or 2.
+goto :main_menu
+
+REM ---------------------------------------------------------------------------
+REM GITHUB BACKUP - USERNAME PROMPT
+REM ---------------------------------------------------------------------------
+
+:github_header
+echo # ============================
+echo # vecnode
+echo # GitHub Repository Backup
+echo # ============================
+echo.
 
 :prompt_username
 echo.
@@ -47,6 +80,10 @@ if not defined GITHUB_USERNAME (
 
 echo [INFO] GitHub username set to: %GITHUB_USERNAME%
 echo.
+
+REM ---------------------------------------------------------------------------
+REM GITHUB BACKUP - SOURCE CHOICE
+REM ---------------------------------------------------------------------------
 
 :prompt_source
 echo.
@@ -89,12 +126,15 @@ if "%SOURCE_CHOICE%"=="3" (
 echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
 goto :prompt_source
 
+REM ---------------------------------------------------------------------------
+REM COMPLETION
+REM ---------------------------------------------------------------------------
+
 :summary
 echo.
 echo # ============================
 echo # Backup process completed
 echo # ============================
 echo.
-pause
 endlocal
 exit /b 0
