@@ -81,6 +81,55 @@ if not exist "%SB_SPACE_PATH%" (
 echo.
 
 REM ---------------------------------------------------------------------------
+REM OPTIONAL BACKUP SPACE FOLDER
+REM ---------------------------------------------------------------------------
+
+:backup_prompt
+echo.
+set "BACKUP_CHOICE="
+set /p BACKUP_CHOICE="Do you want to backup the space folder elsewhere? (y/n): "
+
+if /i "%BACKUP_CHOICE%"=="y" goto :backup_destination
+if /i "%BACKUP_CHOICE%"=="yes" goto :backup_destination
+if /i "%BACKUP_CHOICE%"=="n" goto :sync_prompt
+if /i "%BACKUP_CHOICE%"=="no" goto :sync_prompt
+
+echo [ERROR] Invalid choice. Please enter 'y' or 'n'.
+goto :backup_prompt
+
+:backup_destination
+echo.
+set "BACKUP_BASE_PATH="
+set /p BACKUP_BASE_PATH="Enter backup destination folder path (default: %USERPROFILE%\Desktop): "
+
+if not defined BACKUP_BASE_PATH set "BACKUP_BASE_PATH=%USERPROFILE%\Desktop"
+
+if "%BACKUP_BASE_PATH:~0,1%"=="~" set "BACKUP_BASE_PATH=%USERPROFILE%%BACKUP_BASE_PATH:~1%"
+
+if not exist "%BACKUP_BASE_PATH%" (
+    echo [ERROR] Path does not exist: %BACKUP_BASE_PATH%
+    goto :backup_destination
+)
+
+for /f "tokens=*" %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "BACKUP_TS=%%i"
+set "BACKUP_TARGET=%BACKUP_BASE_PATH%\silverbullet-space-backup-%BACKUP_TS%"
+
+mkdir "%BACKUP_TARGET%" >nul 2>nul
+if errorlevel 1 (
+    echo [ERROR] Failed to create backup folder: %BACKUP_TARGET%
+    goto :backup_destination
+)
+
+echo [INFO] Backing up space folder to: %BACKUP_TARGET%
+robocopy "%SB_SPACE_PATH%" "%BACKUP_TARGET%" /E >nul
+if errorlevel 8 (
+    echo [ERROR] Backup failed.
+    exit /b 1
+) else (
+    echo [OK] Backup completed successfully.
+)
+
+REM ---------------------------------------------------------------------------
 REM OPTIONAL SYNC FROM ANOTHER FOLDER
 REM ---------------------------------------------------------------------------
 

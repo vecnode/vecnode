@@ -39,9 +39,10 @@ echo.
 echo What would you like to do?
 echo   1 = Backup GitHub
 echo   2 = Silverbullet
+echo   3 = Quit
 echo.
 set "MAIN_CHOICE="
-set /p MAIN_CHOICE="Enter your choice (1 or 2): "
+set /p MAIN_CHOICE="Enter your choice (1, 2, or 3): "
 
 if "%MAIN_CHOICE%"=="1" (
     echo.
@@ -54,7 +55,13 @@ if "%MAIN_CHOICE%"=="2" (
     exit /b 0
 )
 
-echo [ERROR] Invalid choice. Please enter 1 or 2.
+if "%MAIN_CHOICE%"=="3" (
+    echo.
+    echo [INFO] Exiting.
+    exit /b 0
+)
+
+echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
 goto :main_menu
 
 REM ---------------------------------------------------------------------------
