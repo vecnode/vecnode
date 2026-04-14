@@ -66,6 +66,57 @@ fi
 echo ""
 
 # ---------------------------------------------------------------------------
+# OPTIONAL BACKUP SPACE FOLDER
+# ---------------------------------------------------------------------------
+
+while true; do
+  echo ""
+  read -r -p "Do you want to backup the space folder elsewhere? (y/n): " BACKUP_CHOICE
+
+  if [[ "$BACKUP_CHOICE" == "y" || "$BACKUP_CHOICE" == "Y" || "$BACKUP_CHOICE" == "yes" || "$BACKUP_CHOICE" == "YES" ]]; then
+    while true; do
+      echo ""
+      read -r -p "Enter backup destination folder path (default: ${HOME}/Desktop): " BACKUP_BASE_PATH
+
+      if [[ -z "${BACKUP_BASE_PATH}" ]]; then
+        BACKUP_BASE_PATH="${HOME}/Desktop"
+      fi
+
+      BACKUP_BASE_PATH="${BACKUP_BASE_PATH/#\~/$HOME}"
+
+      if [[ ! -d "${BACKUP_BASE_PATH}" ]]; then
+        echo "[ERROR] Path does not exist: ${BACKUP_BASE_PATH}"
+        continue
+      fi
+
+      BACKUP_TS="$(date '+%Y%m%d-%H%M%S')"
+      BACKUP_TARGET="${BACKUP_BASE_PATH}/silverbullet-space-backup-${BACKUP_TS}"
+
+      if ! mkdir -p "${BACKUP_TARGET}"; then
+        echo "[ERROR] Failed to create backup folder: ${BACKUP_TARGET}"
+        continue
+      fi
+
+      echo "[INFO] Backing up space folder to: ${BACKUP_TARGET}"
+      if ! cp -a "${SB_SPACE_PATH}/." "${BACKUP_TARGET}/"; then
+        echo "[ERROR] Backup failed."
+        exit 1
+      fi
+
+      echo "[OK] Backup completed successfully."
+      break
+    done
+    break
+  elif [[ "$BACKUP_CHOICE" == "n" || "$BACKUP_CHOICE" == "N" || "$BACKUP_CHOICE" == "no" || "$BACKUP_CHOICE" == "NO" ]]; then
+    break
+  else
+    echo "[ERROR] Invalid choice. Please enter 'y' or 'n'."
+  fi
+done
+
+echo ""
+
+# ---------------------------------------------------------------------------
 # OPTIONAL SYNC FROM ANOTHER FOLDER
 # ---------------------------------------------------------------------------
 

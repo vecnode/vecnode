@@ -45,8 +45,9 @@ while true; do
   echo "What would you like to do?"
   echo "  1 = Backup GitHub"
   echo "  2 = Silverbullet"
+  echo "  3 = Quit"
   echo ""
-  read -r -p "Enter your choice (1 or 2): " MAIN_CHOICE
+  read -r -p "Enter your choice (1, 2, or 3): " MAIN_CHOICE
 
   if [[ "$MAIN_CHOICE" == "1" ]]; then
     echo ""
@@ -59,7 +60,13 @@ while true; do
     exit 0
   fi
 
-  echo "[ERROR] Invalid choice. Please enter 1 or 2."
+  if [[ "$MAIN_CHOICE" == "3" ]]; then
+    echo ""
+    echo "[INFO] Exiting."
+    exit 0
+  fi
+
+  echo "[ERROR] Invalid choice. Please enter 1, 2, or 3."
 done
 
 # ---------------------------------------------------------------------------
