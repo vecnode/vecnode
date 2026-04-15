@@ -130,17 +130,17 @@ if errorlevel 8 (
 )
 
 REM ---------------------------------------------------------------------------
-REM OPTIONAL SYNC FROM ANOTHER FOLDER
+REM OPTIONAL COPY FROM ANOTHER FOLDER
 REM ---------------------------------------------------------------------------
 
 :sync_prompt
 echo.
 set "SYNC_CHOICE="
-set /p SYNC_CHOICE="Do you want to sync markdown files from another folder? (y/n): "
+set /p SYNC_CHOICE="Do you want to copy markdown files from another folder? (y/n): "
 
 if /i "%SYNC_CHOICE%"=="y" goto :sync_source
 if /i "%SYNC_CHOICE%"=="n" (
-    echo [INFO] Skipping sync.
+    echo [INFO] Skipping copy.
     goto :after_sync
 )
 
@@ -164,12 +164,32 @@ if not exist "%SOURCE_PATH%" (
     goto :sync_source
 )
 
-echo [INFO] Syncing markdown files from: %SOURCE_PATH%
-copy /y "%SOURCE_PATH%\*.md" "%SB_SPACE_PATH%\" >nul 2>nul
-if errorlevel 1 (
-    echo [WARNING] No markdown files found to sync, or sync encountered an issue.
+echo [INFO] Copying markdown files from: %SOURCE_PATH%
+set "FOUND_MD="
+set /a COPY_COUNT=0
+
+for %%F in ("%SOURCE_PATH%\*.md") do (
+    if exist "%%~fF" (
+        set "FOUND_MD=1"
+        if exist "%SB_SPACE_PATH%\%%~nxF" (
+            choice /c YN /n /m "File already exists: %%~nxF. Overwrite? [Y/N]: "
+            if errorlevel 2 (
+                echo [INFO] Skipped: %%~nxF
+            ) else (
+                copy /y "%%~fF" "%SB_SPACE_PATH%\%%~nxF" >nul 2>nul
+                if not errorlevel 1 set /a COPY_COUNT+=1
+            )
+        ) else (
+            copy "%%~fF" "%SB_SPACE_PATH%\%%~nxF" >nul 2>nul
+            if not errorlevel 1 set /a COPY_COUNT+=1
+        )
+    )
+)
+
+if not defined FOUND_MD (
+    echo [WARNING] No markdown files found in source folder.
 ) else (
-    echo [OK] Markdown files synced successfully.
+    echo [OK] Copy step completed. Files copied: !COPY_COUNT!
 )
 
 :after_sync
