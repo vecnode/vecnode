@@ -35,7 +35,6 @@ for cmd in git curl jq; do
     exit 1
   fi
 done
-
 # ---------------------------------------------------------------------------
 # MAIN MENU - CHOOSE OPERATION
 # ---------------------------------------------------------------------------
@@ -46,9 +45,10 @@ while true; do
   echo "  1 = Backup GitHub"
   echo "  2 = Silverbullet"
   echo "  3 = Docker"
-  echo "  4 = Quit"
+  echo "  4 = Settings"
+  echo "  5 = Quit"
   echo ""
-  read -r -p "Enter your choice (1, 2, 3, or 4): " MAIN_CHOICE
+  read -r -p "Enter your choice (1, 2, 3, 4, or 5): " MAIN_CHOICE
 
   if [[ "$MAIN_CHOICE" == "1" ]]; then
     echo ""
@@ -100,12 +100,37 @@ while true; do
   fi
 
   if [[ "$MAIN_CHOICE" == "4" ]]; then
+    while true; do
+      echo "What would you like to do?"
+      echo "  1 = Check Internet"
+      echo "  2 = Quit"
+      echo ""
+      read -r -p "Enter your choice (1 or 2): " SETTINGS_CHOICE
+
+      if [[ "$SETTINGS_CHOICE" == "1" ]]; then
+        echo ""
+        bash "$SCRIPT_DIR/check_internet.sh"
+        continue
+      fi
+
+      if [[ "$SETTINGS_CHOICE" == "2" ]]; then
+        echo ""
+        echo "[INFO] Exiting."
+        exit 0
+      fi
+
+      echo "[ERROR] Invalid choice. Please enter 1 or 2."
+      echo ""
+    done
+  fi
+
+  if [[ "$MAIN_CHOICE" == "5" ]]; then
     echo ""
     echo "[INFO] Exiting."
     exit 0
   fi
 
-  echo "[ERROR] Invalid choice. Please enter 1, 2, 3, or 4."
+  echo "[ERROR] Invalid choice. Please enter 1, 2, 3, 4, or 5."
 done
 
 # ---------------------------------------------------------------------------
