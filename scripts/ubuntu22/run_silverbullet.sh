@@ -117,12 +117,12 @@ done
 echo ""
 
 # ---------------------------------------------------------------------------
-# OPTIONAL SYNC FROM ANOTHER FOLDER
+# OPTIONAL COPY FROM ANOTHER FOLDER
 # ---------------------------------------------------------------------------
 
 while true; do
   echo ""
-  read -r -p "Do you want to sync markdown files from another folder? (y/n): " SYNC_CHOICE
+  read -r -p "Do you want to copy markdown files from another folder? (y/n): " SYNC_CHOICE
   
   if [[ "$SYNC_CHOICE" == "y" || "$SYNC_CHOICE" == "Y" ]]; then
     while true; do
@@ -142,20 +142,53 @@ while true; do
         continue
       fi
       
-      echo "[INFO] Syncing markdown files from: ${SOURCE_PATH}"
-      
-      # Copy all markdown files (.md) from source to destination
-      if cp "${SOURCE_PATH}"/*.md "${SB_SPACE_PATH}/" 2>/dev/null; then
-        echo "[OK] Markdown files synced successfully."
+      echo "[INFO] Copying markdown files from: ${SOURCE_PATH}"
+
+      FOUND_MD=0
+      COPY_COUNT=0
+
+      shopt -s nullglob
+      for source_file in "${SOURCE_PATH}"/*.md; do
+        if [[ -f "${source_file}" ]]; then
+          FOUND_MD=1
+          file_name="$(basename "${source_file}")"
+          target_file="${SB_SPACE_PATH}/${file_name}"
+
+          if [[ -e "${target_file}" ]]; then
+            while true; do
+              read -r -p "File already exists: ${file_name}. Overwrite? [Y/N]: " OVERWRITE_CHOICE
+              if [[ "${OVERWRITE_CHOICE}" == "Y" || "${OVERWRITE_CHOICE}" == "y" ]]; then
+                if cp -f "${source_file}" "${target_file}"; then
+                  COPY_COUNT=$((COPY_COUNT + 1))
+                fi
+                break
+              elif [[ "${OVERWRITE_CHOICE}" == "N" || "${OVERWRITE_CHOICE}" == "n" ]]; then
+                echo "[INFO] Skipped: ${file_name}"
+                break
+              else
+                echo "[ERROR] Invalid choice. Please enter 'y' or 'n'."
+              fi
+            done
+          else
+            if cp "${source_file}" "${target_file}"; then
+              COPY_COUNT=$((COPY_COUNT + 1))
+            fi
+          fi
+        fi
+      done
+      shopt -u nullglob
+
+      if [[ ${FOUND_MD} -eq 0 ]]; then
+        echo "[WARNING] No markdown files found in source folder."
       else
-        echo "[WARNING] No markdown files found to sync, or sync encountered an issue."
+        echo "[OK] Copy step completed. Files copied: ${COPY_COUNT}"
       fi
       
       break
     done
     break
   elif [[ "$SYNC_CHOICE" == "n" || "$SYNC_CHOICE" == "N" ]]; then
-    echo "[INFO] Skipping sync."
+    echo "[INFO] Skipping copy."
     break
   else
     echo "[ERROR] Invalid choice. Please enter 'y' or 'n'."
