@@ -39,10 +39,11 @@ echo.
 echo What would you like to do?
 echo   1 = Backup GitHub
 echo   2 = Silverbullet
-echo   3 = Quit
+echo   3 = Docker
+echo   4 = Quit
 echo.
 set "MAIN_CHOICE="
-set /p MAIN_CHOICE="Enter your choice (1, 2, or 3): "
+set /p MAIN_CHOICE="Enter your choice (1, 2, 3, or 4): "
 
 if "%MAIN_CHOICE%"=="1" (
     echo.
@@ -57,12 +58,73 @@ if "%MAIN_CHOICE%"=="2" (
 
 if "%MAIN_CHOICE%"=="3" (
     echo.
+    where docker >nul 2>nul
+    if errorlevel 1 (
+        echo [ERROR] Docker is not available or not in PATH
+        echo Please install Docker Engine/Desktop from:
+        echo   https://docs.docker.com/engine/install/
+        exit /b 1
+    )
+    goto :docker_menu
+)
+
+if "%MAIN_CHOICE%"=="4" (
+    echo.
     echo [INFO] Exiting.
     exit /b 0
 )
 
-echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
+echo [ERROR] Invalid choice. Please enter 1, 2, 3, or 4.
 goto :main_menu
+
+REM ---------------------------------------------------------------------------
+REM DOCKER MENU
+REM ---------------------------------------------------------------------------
+
+:docker_menu
+echo What would you like to do?
+echo   1 = Clear Containers and Images
+echo   2 = Quit
+echo.
+set "DOCKER_CHOICE="
+set /p DOCKER_CHOICE="Enter your choice (1 or 2): "
+
+if "%DOCKER_CHOICE%"=="1" (
+    echo.
+    set "HAS_CONTAINERS="
+    for /f "usebackq delims=" %%C in (`docker ps -aq 2^>nul`) do (
+        set "HAS_CONTAINERS=1"
+        docker stop %%C >nul 2>nul
+    )
+    if not defined HAS_CONTAINERS echo No containers to stop
+
+    set "HAS_CONTAINERS="
+    for /f "usebackq delims=" %%C in (`docker ps -aq 2^>nul`) do (
+        set "HAS_CONTAINERS=1"
+        docker rm -f %%C >nul 2>nul
+    )
+    if not defined HAS_CONTAINERS echo No containers to remove
+
+    set "HAS_IMAGES="
+    for /f "usebackq delims=" %%I in (`docker images -aq 2^>nul`) do (
+        set "HAS_IMAGES=1"
+        docker rmi -f %%I >nul 2>nul
+    )
+    if not defined HAS_IMAGES echo No images to remove
+
+    echo.
+    exit /b 0
+)
+
+if "%DOCKER_CHOICE%"=="2" (
+    echo.
+    echo [INFO] Exiting.
+    exit /b 0
+)
+
+echo [ERROR] Invalid choice. Please enter 1 or 2.
+echo.
+goto :docker_menu
 
 REM ---------------------------------------------------------------------------
 REM GITHUB BACKUP - USERNAME PROMPT
