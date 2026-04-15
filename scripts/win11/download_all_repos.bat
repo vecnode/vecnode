@@ -9,7 +9,7 @@ REM Usage:
 REM   download_all_repos.bat [username]
 REM   If no username is provided, defaults to: vecnode
 REM
-REM Downloads into: %%USERPROFILE%%\Desktop\git-backup-DD-MM-YYYY-HH-MM-SS\
+REM Downloads into: %%VECNODE_TARGET_DIR%% or %%USERPROFILE%%\Desktop\git-backup-DD-MM-YYYY-HH-MM-SS\
 REM Requirements (Windows):
 REM   - git
 REM   - curl
@@ -30,7 +30,12 @@ set "TIMESTAMP="
 if exist "%TS_FILE%" set /p TIMESTAMP=<"%TS_FILE%"
 if exist "%TS_FILE%" del /q "%TS_FILE%" >nul 2>nul
 if not defined TIMESTAMP set "TIMESTAMP=%RANDOM%-%RANDOM%"
-set "TARGET_DIR=%USERPROFILE%\Desktop\git-backup-%TIMESTAMP%"
+
+if defined VECNODE_TARGET_DIR (
+    set "TARGET_DIR=%VECNODE_TARGET_DIR%"
+) else (
+    set "TARGET_DIR=%USERPROFILE%\Desktop\git-backup-%TIMESTAMP%"
+)
 
 REM ---------------------------------------------------------------------------
 REM OS CHECK

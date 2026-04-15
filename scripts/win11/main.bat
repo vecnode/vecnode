@@ -17,7 +17,7 @@ cls
 echo.
 echo # ============================
 echo # vecnode
-echo # GitHub Repository Backup
+echo # Windows CLI
 echo # ============================
 echo.
 
@@ -37,7 +37,7 @@ REM ---------------------------------------------------------------------------
 :main_menu
 echo.
 echo What would you like to do?
-echo   1 = Backup GitHub
+echo   1 = GitHub
 echo   2 = Silverbullet
 echo   3 = Docker
 echo   4 = Settings
@@ -48,7 +48,7 @@ set /p MAIN_CHOICE="Enter your choice (1, 2, 3, 4, or 5): "
 
 if "%MAIN_CHOICE%"=="1" (
     echo.
-    goto :github_header
+    goto :github_menu
 )
 
 if "%MAIN_CHOICE%"=="2" (
@@ -82,6 +82,33 @@ if "%MAIN_CHOICE%"=="5" (
 
 echo [ERROR] Invalid choice. Please enter 1, 2, 3, 4, or 5.
 goto :main_menu
+
+REM ---------------------------------------------------------------------------
+REM GITHUB MENU
+REM ---------------------------------------------------------------------------
+
+:github_menu
+echo What would you like to do?
+echo   1 = Backup GitHub
+echo   2 = Quit
+echo.
+set "GITHUB_MENU_CHOICE="
+set /p GITHUB_MENU_CHOICE="Enter your choice (1 or 2): "
+
+if "%GITHUB_MENU_CHOICE%"=="1" (
+    echo.
+    goto :github_header
+)
+
+if "%GITHUB_MENU_CHOICE%"=="2" (
+    echo.
+    echo [INFO] Exiting.
+    exit /b 0
+)
+
+echo [ERROR] Invalid choice. Please enter 1 or 2.
+echo.
+goto :github_menu
 
 REM ---------------------------------------------------------------------------
 REM SETTINGS MENU
@@ -202,10 +229,51 @@ echo.
 set "SOURCE_CHOICE="
 set /p SOURCE_CHOICE="Enter your choice (1, 2, or 3): "
 
+if "%SOURCE_CHOICE%"=="1" goto :prompt_target_dir
+
+if "%SOURCE_CHOICE%"=="2" goto :prompt_target_dir
+
+if "%SOURCE_CHOICE%"=="3" goto :prompt_target_dir
+
+echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
+goto :prompt_source
+
+REM ---------------------------------------------------------------------------
+REM GITHUB BACKUP - TARGET DIRECTORY PROMPT
+REM ---------------------------------------------------------------------------
+
+:prompt_target_dir
+set "TS_FILE=%TEMP%\vecnode-ts-%RANDOM%-%RANDOM%.txt"
+powershell -NoProfile -Command "Get-Date -Format 'dd-MM-yyyy-HH-mm-ss'" > "%TS_FILE%"
+set "TIMESTAMP="
+if exist "%TS_FILE%" set /p TIMESTAMP=<"%TS_FILE%"
+if exist "%TS_FILE%" del /q "%TS_FILE%" >nul 2>nul
+if not defined TIMESTAMP set "TIMESTAMP=%RANDOM%-%RANDOM%"
+
+if "%SOURCE_CHOICE%"=="2" (
+    set "DEFAULT_DOWNLOAD_TARGET=%USERPROFILE%\Desktop\git-backup-orgs-%TIMESTAMP%"
+) else (
+    set "DEFAULT_DOWNLOAD_TARGET=%USERPROFILE%\Desktop\git-backup-%TIMESTAMP%"
+)
+
+echo.
+set "DOWNLOAD_TARGET_INPUT="
+set /p DOWNLOAD_TARGET_INPUT="Where should the repositories be downloaded? (press Enter for default: %DEFAULT_DOWNLOAD_TARGET%): "
+
+if not defined DOWNLOAD_TARGET_INPUT (
+    set "DOWNLOAD_TARGET_DIR=%DEFAULT_DOWNLOAD_TARGET%"
+) else (
+    set "DOWNLOAD_TARGET_DIR=%DOWNLOAD_TARGET_INPUT:"=%"
+)
+
+echo [INFO] Download target set to: %DOWNLOAD_TARGET_DIR%
+echo.
+
 if "%SOURCE_CHOICE%"=="1" (
     echo.
     echo [INFO] Downloading personal repositories for "%GITHUB_USERNAME%"
     echo.
+    set "VECNODE_TARGET_DIR=%DOWNLOAD_TARGET_DIR%"
     call "%~dp0download_all_repos.bat" "%GITHUB_USERNAME%"
     goto :summary
 )
@@ -214,6 +282,7 @@ if "%SOURCE_CHOICE%"=="2" (
     echo.
     echo [INFO] Downloading organization repositories
     echo.
+    set "VECNODE_TARGET_DIR=%DOWNLOAD_TARGET_DIR%"
     call "%~dp0download_all_orgs.bat"
     goto :summary
 )
@@ -222,6 +291,7 @@ if "%SOURCE_CHOICE%"=="3" (
     echo.
     echo [INFO] Downloading personal repositories for "%GITHUB_USERNAME%"
     echo.
+    set "VECNODE_TARGET_DIR=%DOWNLOAD_TARGET_DIR%"
     call "%~dp0download_all_repos.bat" "%GITHUB_USERNAME%"
     echo.
     echo [INFO] Downloading organization repositories
@@ -229,9 +299,6 @@ if "%SOURCE_CHOICE%"=="3" (
     call "%~dp0download_all_orgs.bat"
     goto :summary
 )
-
-echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
-goto :prompt_source
 
 REM ---------------------------------------------------------------------------
 REM COMPLETION

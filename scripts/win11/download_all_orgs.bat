@@ -10,7 +10,7 @@ REM   download_all_orgs.bat [org1 org2 org3 ...]
 REM   If no organizations are provided, uses default list:
 REM     sttera-studio atomic-media-studio osd-network arpsci
 REM
-REM Downloads into: %%USERPROFILE%%\Desktop\git-backup-orgs-DD-MM-YYYY-HH-MM-SS\
+REM Downloads into: %%VECNODE_TARGET_DIR%% or %%USERPROFILE%%\Desktop\git-backup-orgs-DD-MM-YYYY-HH-MM-SS\
 REM Requirements (Windows):
 REM   - git
 REM   - curl
@@ -34,7 +34,12 @@ set "TIMESTAMP="
 if exist "%TS_FILE%" set /p TIMESTAMP=<"%TS_FILE%"
 if exist "%TS_FILE%" del /q "%TS_FILE%" >nul 2>nul
 if not defined TIMESTAMP set "TIMESTAMP=%RANDOM%-%RANDOM%"
-set "TARGET_DIR=%USERPROFILE%\Desktop\git-backup-orgs-%TIMESTAMP%"
+
+if defined VECNODE_TARGET_DIR (
+    set "TARGET_DIR=%VECNODE_TARGET_DIR%"
+) else (
+    set "TARGET_DIR=%USERPROFILE%\Desktop\git-backup-orgs-%TIMESTAMP%"
+)
 
 REM ---------------------------------------------------------------------------
 REM OS CHECK
