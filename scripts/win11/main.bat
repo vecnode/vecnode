@@ -3,7 +3,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 REM ---------------------------------------------------------------------------
 REM main.bat
-REM Entry point for vecnode - GitHub repository backup tool
+REM Entry point for vecnode CLI
 REM Usage:
 REM   main.bat
 REM
@@ -40,10 +40,11 @@ echo What would you like to do?
 echo   1 = Backup GitHub
 echo   2 = Silverbullet
 echo   3 = Docker
-echo   4 = Quit
+echo   4 = Settings
+echo   5 = Quit
 echo.
 set "MAIN_CHOICE="
-set /p MAIN_CHOICE="Enter your choice (1, 2, 3, or 4): "
+set /p MAIN_CHOICE="Enter your choice (1, 2, 3, 4, or 5): "
 
 if "%MAIN_CHOICE%"=="1" (
     echo.
@@ -70,12 +71,49 @@ if "%MAIN_CHOICE%"=="3" (
 
 if "%MAIN_CHOICE%"=="4" (
     echo.
+    goto :settings_menu
+)
+
+if "%MAIN_CHOICE%"=="5" (
+    echo.
     echo [INFO] Exiting.
     exit /b 0
 )
 
-echo [ERROR] Invalid choice. Please enter 1, 2, 3, or 4.
+echo [ERROR] Invalid choice. Please enter 1, 2, 3, 4, or 5.
 goto :main_menu
+
+REM ---------------------------------------------------------------------------
+REM SETTINGS MENU
+REM ---------------------------------------------------------------------------
+
+:settings_menu
+echo What would you like to do?
+echo   1 = Check Internet
+echo   2 = Quit
+echo.
+set "SETTINGS_CHOICE="
+set /p SETTINGS_CHOICE="Enter your choice (1 or 2): "
+
+if "%SETTINGS_CHOICE%"=="1" goto :check_internet
+
+if "%SETTINGS_CHOICE%"=="2" (
+    echo.
+    echo [INFO] Exiting.
+    exit /b 0
+)
+
+echo [ERROR] Invalid choice. Please enter 1 or 2.
+echo.
+goto :settings_menu
+
+REM ---------------------------------------------------------------------------
+REM SETTINGS - INTERNET CHECK
+REM ---------------------------------------------------------------------------
+
+:check_internet
+call "%~dp0check_internet.bat"
+goto :settings_menu
 
 REM ---------------------------------------------------------------------------
 REM DOCKER MENU

@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ---------------------------------------------------------------------------
 # main.sh
-# Entry point for vecnode - GitHub repository backup tool
+# Entry point for vecnode CLI
 #
 # Usage:
 #   ./main.sh
