@@ -122,26 +122,34 @@ REM ---------------------------------------------------------------------------
 :settings_menu
 echo What would you like to do?
 echo   1 = Check Internet
-echo   2 = Menu
-echo   3 = Quit
+echo   2 = CLI Dependencies
+echo   3 = Menu
+echo   4 = Quit
 echo.
 set "SETTINGS_CHOICE="
-set /p SETTINGS_CHOICE="Enter your choice (1, 2, or 3): "
+set /p SETTINGS_CHOICE="Enter your choice (1, 2, 3, or 4): "
 
 if "%SETTINGS_CHOICE%"=="1" goto :check_internet
 
 if "%SETTINGS_CHOICE%"=="2" (
     echo.
-    goto :main_menu
+    call "%~dp0check_dependencies.bat"
+    echo.
+    goto :settings_menu
 )
 
 if "%SETTINGS_CHOICE%"=="3" (
+    echo.
+    goto :main_menu
+)
+
+if "%SETTINGS_CHOICE%"=="4" (
     echo.
     echo [INFO] Exiting.
     exit /b 0
 )
 
-echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
+echo [ERROR] Invalid choice. Please enter 1, 2, 3, or 4.
 echo.
 goto :settings_menu
 
@@ -160,11 +168,12 @@ REM ---------------------------------------------------------------------------
 :docker_menu
 echo What would you like to do?
 echo   1 = Clear Containers and Images
-echo   2 = Menu
-echo   3 = Quit
+echo   2 = Start CLI Container
+echo   3 = Menu
+echo   4 = Quit
 echo.
 set "DOCKER_CHOICE="
-set /p DOCKER_CHOICE="Enter your choice (1, 2, or 3): "
+set /p DOCKER_CHOICE="Enter your choice (1, 2, 3, or 4): "
 
 if "%DOCKER_CHOICE%"=="1" (
     echo.
@@ -195,16 +204,23 @@ if "%DOCKER_CHOICE%"=="1" (
 
 if "%DOCKER_CHOICE%"=="2" (
     echo.
-    goto :main_menu
+    echo hello world
+    echo.
+    goto :docker_menu
 )
 
 if "%DOCKER_CHOICE%"=="3" (
+    echo.
+    goto :main_menu
+)
+
+if "%DOCKER_CHOICE%"=="4" (
     echo.
     echo [INFO] Exiting.
     exit /b 0
 )
 
-echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
+echo [ERROR] Invalid choice. Please enter 1, 2, 3, or 4.
 echo.
 goto :docker_menu
 

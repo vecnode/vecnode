@@ -1,16 +1,24 @@
-### Windows 11
+
+# vecnode CLI
+
+### Run
 
 ```bat
+# Ubuntu 22.04
+./scripts/ubuntu22/main.sh
+
+# Windows 11
 scripts\win11\main.bat
 ```
 
-### Ubuntu 22.04
+### Dependencies
 
-```bash
-./scripts/ubuntu22/main.sh
-```
+- curl
+- git
+- jq
+- docker
 
-
+### Silverbullet
 ```bash
 # Stop container
 docker stop silverbullet-local

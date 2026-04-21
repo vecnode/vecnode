@@ -63,10 +63,11 @@ while true; do
     while true; do
       echo "What would you like to do?"
       echo "  1 = Clear Containers and Images"
-      echo "  2 = Menu"
-      echo "  3 = Quit"
+      echo "  2 = Start CLI Container"
+      echo "  3 = Menu"
+      echo "  4 = Quit"
       echo ""
-      read -r -p "Enter your choice (1, 2, or 3): " DOCKER_CHOICE
+      read -r -p "Enter your choice (1, 2, 3, or 4): " DOCKER_CHOICE
 
       if [[ "$DOCKER_CHOICE" == "1" ]]; then
         echo ""
@@ -79,16 +80,23 @@ while true; do
 
       if [[ "$DOCKER_CHOICE" == "2" ]]; then
         echo ""
-        break
+        echo "hello world"
+        echo ""
+        continue
       fi
 
       if [[ "$DOCKER_CHOICE" == "3" ]]; then
+        echo ""
+        break
+      fi
+
+      if [[ "$DOCKER_CHOICE" == "4" ]]; then
         echo ""
         echo "[INFO] Exiting."
         exit 0
       fi
 
-      echo "[ERROR] Invalid choice. Please enter 1, 2, or 3."
+      echo "[ERROR] Invalid choice. Please enter 1, 2, 3, or 4."
       echo ""
     done
     continue
@@ -165,10 +173,11 @@ while true; do
     while true; do
       echo "What would you like to do?"
       echo "  1 = Check Internet"
-      echo "  2 = Menu"
-      echo "  3 = Quit"
+      echo "  2 = CLI Dependencies"
+      echo "  3 = Menu"
+      echo "  4 = Quit"
       echo ""
-      read -r -p "Enter your choice (1, 2, or 3): " SETTINGS_CHOICE
+      read -r -p "Enter your choice (1, 2, 3, or 4): " SETTINGS_CHOICE
 
       if [[ "$SETTINGS_CHOICE" == "1" ]]; then
         echo ""
@@ -178,16 +187,23 @@ while true; do
 
       if [[ "$SETTINGS_CHOICE" == "2" ]]; then
         echo ""
-        break
+        bash "$SCRIPT_DIR/check_dependencies.sh"
+        echo ""
+        continue
       fi
 
       if [[ "$SETTINGS_CHOICE" == "3" ]]; then
+        echo ""
+        break
+      fi
+
+      if [[ "$SETTINGS_CHOICE" == "4" ]]; then
         echo ""
         echo "[INFO] Exiting."
         exit 0
       fi
 
-      echo "[ERROR] Invalid choice. Please enter 1, 2, or 3."
+      echo "[ERROR] Invalid choice. Please enter 1, 2, 3, or 4."
       echo ""
     done
     continue
