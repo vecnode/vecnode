@@ -37,9 +37,9 @@ REM ---------------------------------------------------------------------------
 :main_menu
 echo.
 echo What would you like to do?
-echo   1 = GitHub
-echo   2 = Silverbullet
-echo   3 = Docker
+echo   1 = Docker
+echo   2 = GitHub
+echo   3 = Silverbullet
 echo   4 = Settings
 echo   5 = Quit
 echo.
@@ -47,17 +47,6 @@ set "MAIN_CHOICE="
 set /p MAIN_CHOICE="Enter your choice (1, 2, 3, 4, or 5): "
 
 if "%MAIN_CHOICE%"=="1" (
-    echo.
-    goto :github_menu
-)
-
-if "%MAIN_CHOICE%"=="2" (
-    echo.
-    call "%~dp0run_silverbullet.bat"
-    exit /b 0
-)
-
-if "%MAIN_CHOICE%"=="3" (
     echo.
     where docker >nul 2>nul
     if errorlevel 1 (
@@ -67,6 +56,16 @@ if "%MAIN_CHOICE%"=="3" (
         exit /b 1
     )
     goto :docker_menu
+)
+
+if "%MAIN_CHOICE%"=="2" (
+    echo.
+    goto :github_menu
+)
+
+if "%MAIN_CHOICE%"=="3" (
+    echo.
+    goto :silverbullet_menu
 )
 
 if "%MAIN_CHOICE%"=="4" (
@@ -90,10 +89,11 @@ REM ---------------------------------------------------------------------------
 :github_menu
 echo What would you like to do?
 echo   1 = Backup GitHub
-echo   2 = Quit
+echo   2 = Menu
+echo   3 = Quit
 echo.
 set "GITHUB_MENU_CHOICE="
-set /p GITHUB_MENU_CHOICE="Enter your choice (1 or 2): "
+set /p GITHUB_MENU_CHOICE="Enter your choice (1, 2, or 3): "
 
 if "%GITHUB_MENU_CHOICE%"=="1" (
     echo.
@@ -102,11 +102,16 @@ if "%GITHUB_MENU_CHOICE%"=="1" (
 
 if "%GITHUB_MENU_CHOICE%"=="2" (
     echo.
+    goto :main_menu
+)
+
+if "%GITHUB_MENU_CHOICE%"=="3" (
+    echo.
     echo [INFO] Exiting.
     exit /b 0
 )
 
-echo [ERROR] Invalid choice. Please enter 1 or 2.
+echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
 echo.
 goto :github_menu
 
@@ -117,20 +122,26 @@ REM ---------------------------------------------------------------------------
 :settings_menu
 echo What would you like to do?
 echo   1 = Check Internet
-echo   2 = Quit
+echo   2 = Menu
+echo   3 = Quit
 echo.
 set "SETTINGS_CHOICE="
-set /p SETTINGS_CHOICE="Enter your choice (1 or 2): "
+set /p SETTINGS_CHOICE="Enter your choice (1, 2, or 3): "
 
 if "%SETTINGS_CHOICE%"=="1" goto :check_internet
 
 if "%SETTINGS_CHOICE%"=="2" (
     echo.
+    goto :main_menu
+)
+
+if "%SETTINGS_CHOICE%"=="3" (
+    echo.
     echo [INFO] Exiting.
     exit /b 0
 )
 
-echo [ERROR] Invalid choice. Please enter 1 or 2.
+echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
 echo.
 goto :settings_menu
 
@@ -149,10 +160,11 @@ REM ---------------------------------------------------------------------------
 :docker_menu
 echo What would you like to do?
 echo   1 = Clear Containers and Images
-echo   2 = Quit
+echo   2 = Menu
+echo   3 = Quit
 echo.
 set "DOCKER_CHOICE="
-set /p DOCKER_CHOICE="Enter your choice (1 or 2): "
+set /p DOCKER_CHOICE="Enter your choice (1, 2, or 3): "
 
 if "%DOCKER_CHOICE%"=="1" (
     echo.
@@ -178,18 +190,58 @@ if "%DOCKER_CHOICE%"=="1" (
     if not defined HAS_IMAGES echo No images to remove
 
     echo.
-    exit /b 0
+    goto :docker_menu
 )
 
 if "%DOCKER_CHOICE%"=="2" (
+    echo.
+    goto :main_menu
+)
+
+if "%DOCKER_CHOICE%"=="3" (
     echo.
     echo [INFO] Exiting.
     exit /b 0
 )
 
-echo [ERROR] Invalid choice. Please enter 1 or 2.
+echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
 echo.
 goto :docker_menu
+
+REM ---------------------------------------------------------------------------
+REM SILVERBULLET MENU
+REM ---------------------------------------------------------------------------
+
+:silverbullet_menu
+echo What would you like to do?
+echo   1 = Run Silverbullet
+echo   2 = Menu
+echo   3 = Quit
+echo.
+set "SILVERBULLET_CHOICE="
+set /p SILVERBULLET_CHOICE="Enter your choice (1, 2, or 3): "
+
+if "%SILVERBULLET_CHOICE%"=="1" (
+    echo.
+    call "%~dp0run_silverbullet.bat"
+    echo.
+    goto :silverbullet_menu
+)
+
+if "%SILVERBULLET_CHOICE%"=="2" (
+    echo.
+    goto :main_menu
+)
+
+if "%SILVERBULLET_CHOICE%"=="3" (
+    echo.
+    echo [INFO] Exiting.
+    exit /b 0
+)
+
+echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
+echo.
+goto :silverbullet_menu
 
 REM ---------------------------------------------------------------------------
 REM GITHUB BACKUP - USERNAME PROMPT
@@ -225,9 +277,11 @@ echo What would you like to download?
 echo   1 = Personal repositories only
 echo   2 = Organizations only
 echo   3 = Both personal repositories and organizations
+echo   4 = Menu
+echo   5 = Quit
 echo.
 set "SOURCE_CHOICE="
-set /p SOURCE_CHOICE="Enter your choice (1, 2, or 3): "
+set /p SOURCE_CHOICE="Enter your choice (1, 2, 3, 4, or 5): "
 
 if "%SOURCE_CHOICE%"=="1" goto :prompt_target_dir
 
@@ -235,7 +289,18 @@ if "%SOURCE_CHOICE%"=="2" goto :prompt_target_dir
 
 if "%SOURCE_CHOICE%"=="3" goto :prompt_target_dir
 
-echo [ERROR] Invalid choice. Please enter 1, 2, or 3.
+if "%SOURCE_CHOICE%"=="4" (
+    echo.
+    goto :main_menu
+)
+
+if "%SOURCE_CHOICE%"=="5" (
+    echo.
+    echo [INFO] Exiting.
+    exit /b 0
+)
+
+echo [ERROR] Invalid choice. Please enter 1, 2, 3, 4, or 5.
 goto :prompt_source
 
 REM ---------------------------------------------------------------------------

@@ -17,7 +17,11 @@ set -euo pipefail
 # CONFIGURATION
 # ---------------------------------------------------------------------------
 TIMESTAMP="$(date '+%d-%m-%Y-%H-%M-%S')"
-TARGET_DIR="$HOME/Desktop/git-backup-orgs-${TIMESTAMP}"
+if [[ -n "${VECNODE_TARGET_DIR:-}" ]]; then
+	TARGET_DIR="$VECNODE_TARGET_DIR"
+else
+	TARGET_DIR="$HOME/Desktop/git-backup-orgs-${TIMESTAMP}"
+fi
 PER_PAGE=100   # max allowed by GitHub API
 if [[ "$#" -eq 0 ]]; then
 	ORG_LIST=(

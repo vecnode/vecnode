@@ -22,7 +22,11 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 GITHUB_USER="${1:-vecnode}"
 TIMESTAMP="$(date '+%d-%m-%Y-%H-%M-%S')"
-TARGET_DIR="$HOME/Desktop/git-backup-${TIMESTAMP}"
+if [[ -n "${VECNODE_TARGET_DIR:-}" ]]; then
+  TARGET_DIR="$VECNODE_TARGET_DIR"
+else
+  TARGET_DIR="$HOME/Desktop/git-backup-${TIMESTAMP}"
+fi
 PER_PAGE=100   # max allowed by GitHub API
 
 # ---------------------------------------------------------------------------
