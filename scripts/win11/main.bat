@@ -204,7 +204,8 @@ if "%DOCKER_CHOICE%"=="1" (
 
 if "%DOCKER_CHOICE%"=="2" (
     echo.
-    echo hello world
+    start "vecnode CLI Container" cmd /k call "%~dp0run_cli_container.bat"
+    echo [INFO] Opened CLI container in a new terminal window.
     echo.
     goto :docker_menu
 )

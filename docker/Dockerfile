@@ -7,20 +7,19 @@ RUN apk add --no-cache \
     curl \
     jq \
     bash \
-    ca-certificates
+    ca-certificates \
+    pandoc \
+    python3 \
+    yt-dlp
 
 # Set working directory
 WORKDIR /app
 
-# Clone the vecnode repository
-RUN git clone https://github.com/vecnode/vecnode.git . 
+# Copy local repository into image
+COPY . /app
 
 # Make scripts executable
-RUN chmod +x scripts/download_all_repos.sh scripts/download_all_orgs.sh
+RUN chmod +x scripts/ubuntu22/*.sh scripts/tools-cli/ubuntu22/*.sh
 
-# Create entrypoint script
-RUN echo '#!/bin/bash\nset -e\necho "Starting downloads..."\nbash /app/scripts/download_all_repos.sh\nbash /app/scripts/download_all_orgs.sh\necho "Downloads complete!"\nbash' > /tmp/entrypoint.sh && \
-    chmod +x /tmp/entrypoint.sh
-
-# Run with entrypoint
-ENTRYPOINT ["/bin/bash", "-c", "bash /app/scripts/download_all_repos.sh && bash /app/scripts/download_all_orgs.sh && bash"]
+# Run interactive vecnode Tools CLI by default.
+ENTRYPOINT ["/bin/bash", "/app/scripts/tools-cli/ubuntu22/main.sh"]

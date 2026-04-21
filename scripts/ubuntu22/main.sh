@@ -49,6 +49,7 @@ while true; do
   echo "  5 = Quit"
   echo ""
   read -r -p "Enter your choice (1, 2, 3, 4, or 5): " MAIN_CHOICE
+  clear
 
   if [[ "$MAIN_CHOICE" == "1" ]]; then
     echo ""
@@ -68,6 +69,7 @@ while true; do
       echo "  4 = Quit"
       echo ""
       read -r -p "Enter your choice (1, 2, 3, or 4): " DOCKER_CHOICE
+      clear
 
       if [[ "$DOCKER_CHOICE" == "1" ]]; then
         echo ""
@@ -80,7 +82,25 @@ while true; do
 
       if [[ "$DOCKER_CHOICE" == "2" ]]; then
         echo ""
-        echo "hello world"
+        if command -v gnome-terminal >/dev/null 2>&1; then
+          gnome-terminal -- bash -lc "bash \"$SCRIPT_DIR/run_cli_container.sh\""
+          echo "[INFO] Opened CLI container in gnome-terminal."
+        elif command -v konsole >/dev/null 2>&1; then
+          konsole -e bash -lc "bash \"$SCRIPT_DIR/run_cli_container.sh\""
+          echo "[INFO] Opened CLI container in konsole."
+        elif command -v xfce4-terminal >/dev/null 2>&1; then
+          xfce4-terminal --command="bash -lc 'bash \"$SCRIPT_DIR/run_cli_container.sh\"'"
+          echo "[INFO] Opened CLI container in xfce4-terminal."
+        elif command -v x-terminal-emulator >/dev/null 2>&1; then
+          x-terminal-emulator -e bash -lc "bash \"$SCRIPT_DIR/run_cli_container.sh\""
+          echo "[INFO] Opened CLI container in x-terminal-emulator."
+        elif command -v xterm >/dev/null 2>&1; then
+          xterm -e bash -lc "bash \"$SCRIPT_DIR/run_cli_container.sh\""
+          echo "[INFO] Opened CLI container in xterm."
+        else
+          echo "[WARNING] No GUI terminal detected. Running in current terminal."
+          bash "$SCRIPT_DIR/run_cli_container.sh"
+        fi
         echo ""
         continue
       fi
@@ -111,6 +131,7 @@ while true; do
       echo "  3 = Quit"
       echo ""
       read -r -p "Enter your choice (1, 2, or 3): " GITHUB_MENU_CHOICE
+      clear
 
       if [[ "$GITHUB_MENU_CHOICE" == "1" ]]; then
         echo ""
@@ -144,6 +165,7 @@ while true; do
       echo "  3 = Quit"
       echo ""
       read -r -p "Enter your choice (1, 2, or 3): " SILVERBULLET_CHOICE
+      clear
 
       if [[ "$SILVERBULLET_CHOICE" == "1" ]]; then
         echo ""
@@ -178,6 +200,7 @@ while true; do
       echo "  4 = Quit"
       echo ""
       read -r -p "Enter your choice (1, 2, 3, or 4): " SETTINGS_CHOICE
+      clear
 
       if [[ "$SETTINGS_CHOICE" == "1" ]]; then
         echo ""
@@ -255,6 +278,7 @@ while true; do
   echo "  5 = Quit"
   echo ""
   read -r -p "Enter your choice (1, 2, 3, 4, or 5): " SOURCE_CHOICE
+  clear
 
   if [[ "$SOURCE_CHOICE" == "4" ]]; then
     echo ""
