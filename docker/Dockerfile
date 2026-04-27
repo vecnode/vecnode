@@ -19,7 +19,7 @@ WORKDIR /app
 COPY . /app
 
 # Make scripts executable
-RUN chmod +x scripts/ubuntu22/*.sh scripts/tools-cli/ubuntu22/*.sh
+RUN chmod +x scripts/ubuntu22/*.sh scripts/tools-cli/alpine/*.sh
 
 # Run interactive vecnode Tools CLI by default.
-ENTRYPOINT ["/bin/bash", "/app/scripts/tools-cli/ubuntu22/main.sh"]
+ENTRYPOINT ["/bin/bash", "/app/scripts/tools-cli/alpine/main.sh"]

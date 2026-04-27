@@ -16,6 +16,62 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+REQUIRED_COMMANDS=("git" "curl" "jq")
+
+install_required_commands() {
+  local missing=()
+  local cmd
+
+  for cmd in "${REQUIRED_COMMANDS[@]}"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      missing+=("$cmd")
+    fi
+  done
+
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    return 0
+  fi
+
+  echo "[WARNING] Missing required commands: ${missing[*]}"
+  echo "[INFO] Ubuntu install command: sudo apt-get update && sudo apt-get install -y ${missing[*]}"
+
+  while true; do
+    read -r -p "Would you like to install the missing commands now? (y/n): " INSTALL_CHOICE
+
+    case "$INSTALL_CHOICE" in
+      y|Y)
+        break
+        ;;
+      n|N)
+        echo "[ERROR] vecnode CLI requires: git, curl, and jq"
+        exit 1
+        ;;
+      *)
+        echo "[ERROR] Invalid choice. Please enter 'y' or 'n'."
+        ;;
+    esac
+  done
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "[ERROR] apt-get is not available. Please install these commands manually: ${missing[*]}"
+    exit 1
+  fi
+
+  echo ""
+  echo "[INFO] Updating apt package lists..."
+  sudo apt-get update
+  echo "[INFO] Installing: ${missing[*]}"
+  sudo apt-get install -y "${missing[@]}"
+  echo ""
+
+  for cmd in "${missing[@]}"; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      echo "[ERROR] Installation completed but '$cmd' is still not available."
+      exit 1
+    fi
+  done
+}
+
 # ---------------------------------------------------------------------------
 # HEADER & REQUIREMENTS CHECK
 # ---------------------------------------------------------------------------
@@ -28,13 +84,8 @@ echo "# Linux CLI"
 echo "# ============================"
 echo ""
 
-for cmd in git curl jq; do
-  if ! command -v "$cmd" >/dev/null 2>&1; then
-    echo "[ERROR] Required command not found: $cmd"
-    echo "Please install: git, curl, and jq"
-    exit 1
-  fi
-done
+install_required_commands
+
 # ---------------------------------------------------------------------------
 # MAIN MENU - CHOOSE OPERATION
 # ---------------------------------------------------------------------------

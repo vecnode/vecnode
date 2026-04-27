@@ -49,7 +49,7 @@ echo.
 echo [INFO] Starting container in interactive mode...
 echo [INFO] Container name: %CONTAINER_NAME%
 echo [INFO] Opening shell: /bin/bash
-echo [INFO] Tools CLI command: bash /app/scripts/tools-cli/ubuntu22/main.sh
+echo [INFO] Tools CLI command: bash /app/scripts/tools-cli/alpine/main.sh
 echo [INFO] vecnode CLI command: bash /app/scripts/ubuntu22/main.sh
 echo.
 

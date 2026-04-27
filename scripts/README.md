@@ -1,8 +1,9 @@
 
 # vecnode CLI
 
-vecnode-cli = host/orchestration CLI.  
-tools-cli = in-container tools workflow CLI (pandoc/python/yt-dlp workflows).
+`scripts/ubuntu22` = host/orchestration CLI for Ubuntu 22.04.  
+`scripts/win11` = host/orchestration CLI for Windows 11.  
+`scripts/tools-cli/alpine` = in-container tools workflow CLI for the Alpine Docker image.
 
 ### Run
 
@@ -12,6 +13,9 @@ tools-cli = in-container tools workflow CLI (pandoc/python/yt-dlp workflows).
 
 # Windows 11
 .\scripts\win11\main.bat
+
+# Alpine container Tools CLI
+bash /app/scripts/tools-cli/alpine/main.sh
 ```
 
 ### CLI Dependencies
