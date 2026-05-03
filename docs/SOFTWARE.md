@@ -5,6 +5,9 @@ Software type: 1) Fundamental, 2) Secondary
 - Audacity
     - https://www.audacityteam.org/
 
+- BookStack
+    - https://www.bookstackapp.com/
+
 - Bruno
     - https://www.usebruno.com/
 
