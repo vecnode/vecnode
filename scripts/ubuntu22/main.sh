@@ -105,25 +105,45 @@ while true; do
   if [[ "$MAIN_CHOICE" == "1" ]]; then
     echo ""
 
-    if ! command -v docker >/dev/null 2>&1; then
-      echo "[ERROR] Docker is not available or not in PATH"
-      echo "Please install Docker Engine/Desktop from:"
-      echo "  https://docs.docker.com/engine/install/"
-      exit 1
-    fi
-
     while true; do
       echo "What would you like to do?"
-      echo "  1 = Clear Containers and Images"
-      echo "  2 = Start CLI Container"
-      echo "  3 = Menu"
-      echo "  4 = Quit"
+      echo "  1 = Open Docker Desktop (Win)"
+      echo "  2 = Clear Containers and Images"
+      echo "  3 = Start CLI Container"
+      echo "  4 = Menu"
+      echo "  5 = Quit"
       echo ""
-      read -r -p "Enter your choice (1, 2, 3, or 4): " DOCKER_CHOICE
+      read -r -p "Enter your choice (1, 2, 3, 4, or 5): " DOCKER_CHOICE
       clear
 
       if [[ "$DOCKER_CHOICE" == "1" ]]; then
         echo ""
+        if command -v powershell.exe >/dev/null 2>&1; then
+          if powershell.exe -NoProfile -Command "Get-Process -Name 'Docker Desktop' -ErrorAction SilentlyContinue | Select-Object -First 1" | grep -q "Docker Desktop"; then
+            echo "[INFO] Docker Desktop is already running."
+          else
+            if powershell.exe -NoProfile -Command "if (Test-Path 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe') { Start-Process 'C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe'; exit 0 } else { exit 1 }"; then
+              echo "[INFO] Docker Desktop launch requested."
+            else
+              echo "[ERROR] Docker Desktop executable not found at: C:\Program Files\Docker\Docker\Docker Desktop.exe"
+            fi
+          fi
+        else
+          echo "[INFO] Open Docker Desktop (Win) is only available on Windows hosts."
+        fi
+        echo ""
+        continue
+      fi
+
+      if [[ "$DOCKER_CHOICE" == "2" ]]; then
+        echo ""
+        if ! command -v docker >/dev/null 2>&1; then
+          echo "[ERROR] Docker is not available or not in PATH"
+          echo "Please install Docker Engine/Desktop from:"
+          echo "  https://docs.docker.com/engine/install/"
+          echo ""
+          continue
+        fi
         sudo docker stop $(sudo docker ps -aq) 2>/dev/null || echo "No containers to stop"
         sudo docker rm -f $(sudo docker ps -aq) 2>/dev/null || echo "No containers to remove"
         sudo docker rmi -f $(sudo docker images -aq) 2>/dev/null || echo "No images to remove"
@@ -131,8 +151,15 @@ while true; do
         continue
       fi
 
-      if [[ "$DOCKER_CHOICE" == "2" ]]; then
+      if [[ "$DOCKER_CHOICE" == "3" ]]; then
         echo ""
+        if ! command -v docker >/dev/null 2>&1; then
+          echo "[ERROR] Docker is not available or not in PATH"
+          echo "Please install Docker Engine/Desktop from:"
+          echo "  https://docs.docker.com/engine/install/"
+          echo ""
+          continue
+        fi
         if command -v gnome-terminal >/dev/null 2>&1; then
           gnome-terminal -- bash -lc "bash \"$SCRIPT_DIR/run_cli_container.sh\""
           echo "[INFO] Opened CLI container in gnome-terminal."
@@ -156,18 +183,18 @@ while true; do
         continue
       fi
 
-      if [[ "$DOCKER_CHOICE" == "3" ]]; then
+      if [[ "$DOCKER_CHOICE" == "4" ]]; then
         echo ""
         break
       fi
 
-      if [[ "$DOCKER_CHOICE" == "4" ]]; then
+      if [[ "$DOCKER_CHOICE" == "5" ]]; then
         echo ""
         echo "[INFO] Exiting."
         exit 0
       fi
 
-      echo "[ERROR] Invalid choice. Please enter 1, 2, 3, or 4."
+      echo "[ERROR] Invalid choice. Please enter 1, 2, 3, 4, or 5."
       echo ""
     done
     continue

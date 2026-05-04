@@ -48,13 +48,6 @@ set /p MAIN_CHOICE="Enter your choice (1, 2, 3, 4, or 5): "
 
 if "%MAIN_CHOICE%"=="1" (
     echo.
-    where docker >nul 2>nul
-    if errorlevel 1 (
-        echo [ERROR] Docker is not available or not in PATH
-        echo Please install Docker Engine/Desktop from:
-        echo   https://docs.docker.com/engine/install/
-        exit /b 1
-    )
     goto :docker_menu
 )
 
@@ -167,16 +160,47 @@ REM ---------------------------------------------------------------------------
 
 :docker_menu
 echo What would you like to do?
-echo   1 = Clear Containers and Images
-echo   2 = Start CLI Container
-echo   3 = Menu
-echo   4 = Quit
+echo   1 = Open Docker Desktop (Win)
+echo   2 = Clear Containers and Images
+echo   3 = Start CLI Container
+echo   4 = Menu
+echo   5 = Quit
 echo.
 set "DOCKER_CHOICE="
-set /p DOCKER_CHOICE="Enter your choice (1, 2, 3, or 4): "
+set /p DOCKER_CHOICE="Enter your choice (1, 2, 3, 4, or 5): "
 
 if "%DOCKER_CHOICE%"=="1" (
     echo.
+    tasklist /FI "IMAGENAME eq Docker Desktop.exe" 2>nul | find /I "Docker Desktop.exe" >nul
+    if not errorlevel 1 (
+        echo [INFO] Docker Desktop is already running.
+        echo.
+        goto :docker_menu
+    )
+
+    if exist "C:\Program Files\Docker\Docker\Docker Desktop.exe" (
+        start "Docker Desktop" "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+        echo [INFO] Docker Desktop launch requested.
+    ) else (
+        echo [ERROR] Docker Desktop executable not found at:
+        echo   C:\Program Files\Docker\Docker\Docker Desktop.exe
+    )
+
+    echo.
+    goto :docker_menu
+)
+
+if "%DOCKER_CHOICE%"=="2" (
+    echo.
+    where docker >nul 2>nul
+    if errorlevel 1 (
+        echo [ERROR] Docker is not available or not in PATH
+        echo Please install Docker Engine/Desktop from:
+        echo   https://docs.docker.com/engine/install/
+        echo.
+        goto :docker_menu
+    )
+
     set "HAS_CONTAINERS="
     for /f "usebackq delims=" %%C in (`docker ps -aq 2^>nul`) do (
         set "HAS_CONTAINERS=1"
@@ -202,26 +226,35 @@ if "%DOCKER_CHOICE%"=="1" (
     goto :docker_menu
 )
 
-if "%DOCKER_CHOICE%"=="2" (
+if "%DOCKER_CHOICE%"=="3" (
     echo.
+    where docker >nul 2>nul
+    if errorlevel 1 (
+        echo [ERROR] Docker is not available or not in PATH
+        echo Please install Docker Engine/Desktop from:
+        echo   https://docs.docker.com/engine/install/
+        echo.
+        goto :docker_menu
+    )
+
     start "vecnode CLI Container" cmd /k call "%~dp0run_cli_container.bat"
     echo [INFO] Opened CLI container in a new terminal window.
     echo.
     goto :docker_menu
 )
 
-if "%DOCKER_CHOICE%"=="3" (
+if "%DOCKER_CHOICE%"=="4" (
     echo.
     goto :main_menu
 )
 
-if "%DOCKER_CHOICE%"=="4" (
+if "%DOCKER_CHOICE%"=="5" (
     echo.
     echo [INFO] Exiting.
     exit /b 0
 )
 
-echo [ERROR] Invalid choice. Please enter 1, 2, 3, or 4.
+echo [ERROR] Invalid choice. Please enter 1, 2, 3, 4, or 5.
 echo.
 goto :docker_menu
 

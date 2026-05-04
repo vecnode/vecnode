@@ -44,8 +44,8 @@ Software type: 1) Fundamental, 2) Secondary
 - Kdenlive
     - https://kdenlive.org/
 
-- KiCad
-    https://www.kicad.org/
+- KiCad  
+    - https://www.kicad.org/
 
 - LabPlot
     - https://labplot.org/
