@@ -8,7 +8,7 @@ set -euo pipefail
 # Usage:
 #   ./download_all_orgs.sh [org1 org2 org3 ...]
 #   If no organizations are provided, uses default list:
-#     sttera-studio atomic-media-studio osd-network arpsci
+#     atomic-media-studio osd-network arpsci
 #
 # Downloads into: ~/Desktop/git-backup-orgs-DD-MM-YYYY-HH-MM-SS/
 # ---------------------------------------------------------------------------
@@ -25,7 +25,6 @@ fi
 PER_PAGE=100   # max allowed by GitHub API
 if [[ "$#" -eq 0 ]]; then
 	ORG_LIST=(
-		"sttera-studio"
 		"atomic-media-studio"
 		"osd-network"
 		"arpsci"

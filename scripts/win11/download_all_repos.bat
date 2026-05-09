@@ -98,21 +98,18 @@ goto :fetch_pages
 set /a CLONED=0
 set /a PULLED=0
 set /a FAILED=0
+set "ORGS_RAN=0"
+set "ORGS_STATUS=SKIPPED"
 
 if not exist "%REPO_LIST_FILE%" (
     echo [INFO] No personal repositories found for '%GITHUB_USER%'.
-    goto :cleanup_and_summary
+    goto :prompt_orgs
 )
 
 for /f %%T in ('find /c /v "" ^< "%REPO_LIST_FILE%"') do set "TOTAL=%%T"
 if "%TOTAL%"=="0" (
     echo [INFO] No personal repositories found for '%GITHUB_USER%'.
-    echo.
-    echo ----------------------------------------
-    echo  Done. cloned=%CLONED% pulled=%PULLED% failed=%FAILED%
-    echo ----------------------------------------
-    if exist "%TMP_BASE%" rmdir /s /q "%TMP_BASE%" >nul 2>nul
-    exit /b 0
+    goto :prompt_orgs
 )
 
 set /a IDX=0
@@ -144,10 +141,38 @@ for /f "usebackq delims=" %%R in ("%REPO_LIST_FILE%") do (
     )
 )
 
+:prompt_orgs
+echo.
+:prompt_orgs_choice
+set "INCLUDE_ORGS="
+set /p INCLUDE_ORGS="Also download organization repositories? (y/n): "
+
+if /i "%INCLUDE_ORGS%"=="y" (
+    set "ORGS_RAN=1"
+    echo [INFO] Downloading organization repositories into '%TARGET_DIR%'
+    set "VECNODE_TARGET_DIR=%TARGET_DIR%"
+    call "%~dp0download_all_orgs.bat"
+    if errorlevel 1 (
+        set "ORGS_STATUS=FAILED"
+    ) else (
+        set "ORGS_STATUS=OK"
+    )
+    goto :cleanup_and_summary
+)
+
+if /i "%INCLUDE_ORGS%"=="n" (
+    set "ORGS_STATUS=SKIPPED"
+    goto :cleanup_and_summary
+)
+
+echo [ERROR] Invalid choice. Please enter 'y' or 'n'.
+goto :prompt_orgs_choice
+
 :cleanup_and_summary
 echo.
 echo ----------------------------------------
 echo  Done. cloned=%CLONED% pulled=%PULLED% failed=%FAILED%
+if "%ORGS_RAN%"=="1" echo        org_sync=%ORGS_STATUS%
 echo ----------------------------------------
 
 if exist "%TMP_BASE%" rmdir /s /q "%TMP_BASE%" >nul 2>nul

@@ -45,11 +45,10 @@ for %%D in (%DEPENDENCIES%) do (
             for /f "tokens=*" %%V in ('git --version 2^>nul') do set "VERSION=%%V"
             echo   [OK] !VERSION!
         ) else if "!DEP!"=="curl" (
-            for /f "tokens=*" %%V in ('curl --version 2^>nul ^| findstr /R "."') do (
-                set "VERSION=%%V"
-                goto :curl_version_done
+            set "VERSION="
+            for /f "tokens=* delims=" %%V in ('curl --version 2^>nul') do (
+                if not defined VERSION set "VERSION=%%V"
             )
-            :curl_version_done
             echo   [OK] !VERSION!
         ) else if "!DEP!"=="jq" (
             for /f "tokens=*" %%V in ('jq --version 2^>nul') do set "VERSION=%%V"
@@ -177,11 +176,10 @@ for %%M in (!MISSING_LIST!) do (
             for /f "tokens=*" %%V in ('git --version 2^>nul') do set "VERSION=%%V"
             echo   Verifying !DEP!... [OK] !VERSION!
         ) else if "!DEP!"=="curl" (
-            for /f "tokens=*" %%V in ('curl --version 2^>nul ^| findstr /R "."') do (
-                set "VERSION=%%V"
-                goto :verify_curl_done
+            set "VERSION="
+            for /f "tokens=* delims=" %%V in ('curl --version 2^>nul') do (
+                if not defined VERSION set "VERSION=%%V"
             )
-            :verify_curl_done
             echo   Verifying !DEP!... [OK] !VERSION!
         ) else if "!DEP!"=="jq" (
             for /f "tokens=*" %%V in ('jq --version 2^>nul') do set "VERSION=%%V"

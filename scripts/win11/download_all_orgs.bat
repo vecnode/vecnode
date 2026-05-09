@@ -8,7 +8,7 @@ REM
 REM Usage:
 REM   download_all_orgs.bat [org1 org2 org3 ...]
 REM   If no organizations are provided, uses default list:
-REM     sttera-studio atomic-media-studio osd-network arpsci
+REM     atomic-media-studio osd-network arpsci
 REM
 REM Downloads into: %%VECNODE_TARGET_DIR%% or %%USERPROFILE%%\Desktop\git-backup-orgs-DD-MM-YYYY-HH-MM-SS\
 REM Requirements (Windows):
@@ -23,7 +23,7 @@ REM ---------------------------------------------------------------------------
 
 set "PER_PAGE=100"
 if "%~1"=="" (
-    set "ORG_LINKS=sttera-studio atomic-media-studio osd-network arpsci"
+    set "ORG_LINKS=atomic-media-studio osd-network arpsci"
 ) else (
     set "ORG_LINKS=%*"
 )

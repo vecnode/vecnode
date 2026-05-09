@@ -1,0 +1,21 @@
+[package]
+name = "vn"
+version = "0.1.0"
+edition = "2021"
+description = "vecnode cross-platform CLI"
+
+[dependencies]
+anyhow = { workspace = true }
+atty = { workspace = true }
+clap = { workspace = true }
+crossterm = { workspace = true }
+dirs = { workspace = true }
+futures-util = { workspace = true }
+ratatui = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sysinfo = { workspace = true }
+tokio = { workspace = true }
+toml = { workspace = true }
+chrono = { workspace = true }
