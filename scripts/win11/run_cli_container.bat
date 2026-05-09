@@ -12,11 +12,9 @@ set "BUILD_CONTEXT=%REPO_ROOT%"
 set "IMAGE_NAME=vecnode-cli:latest"
 set "CONTAINER_NAME=vecnode-cli-session"
 
-echo.
-echo # ============================
-echo # vecnode CLI Container
-echo # ============================
-echo.
+
+
+
 
 echo [INFO] Repository root: %REPO_ROOT%
 echo [INFO] Dockerfile: %DOCKERFILE_PATH%

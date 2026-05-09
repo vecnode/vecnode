@@ -77,12 +77,6 @@ install_required_commands() {
 # ---------------------------------------------------------------------------
 
 clear
-echo ""
-echo "# ============================"
-echo "# vecnode"
-echo "# Linux CLI"
-echo "# ============================"
-echo ""
 
 install_required_commands
 
@@ -323,12 +317,6 @@ done
 # GITHUB BACKUP - USERNAME PROMPT
 # ---------------------------------------------------------------------------
 
-echo "# ============================"
-echo "# vecnode"
-echo "# GitHub Repository Backup"
-echo "# ============================"
-echo ""
-
 while true; do
   echo ""
   read -r -p "Enter GitHub username: " GITHUB_USERNAME
@@ -429,7 +417,3 @@ done
 # COMPLETION
 # ---------------------------------------------------------------------------
 
-echo ""
-echo "# ============================"
-echo "# Backup process completed"
-echo "# ============================"

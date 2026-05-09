@@ -17,11 +17,8 @@ REM DOCKER CHECK ^& SETUP
 REM ---------------------------------------------------------------------------
 
 cls
-echo.
-echo # ============================
-echo # SilverBullet Docker Runner
-echo # ============================
-echo.
+
+
 
 echo [INFO] Checking for required tools.
 if not exist "%ProgramFiles%\Docker\Docker\resources\bin\docker.exe" (

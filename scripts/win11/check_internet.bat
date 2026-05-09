@@ -8,10 +8,6 @@ REM
 REM Performs multi-signal internet checks and prints compact I/O counters.
 REM ---------------------------------------------------------------------------
 
-echo.
-echo # ============================
-echo # Internet Diagnostics
-echo # ============================
 
 set "ADAPTER_STATE=DOWN"
 set "RX_BYTES=NA"

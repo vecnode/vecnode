@@ -8,10 +8,6 @@ set -euo pipefail
 # Performs multi-signal internet checks and prints compact I/O counters.
 # ---------------------------------------------------------------------------
 
-echo ""
-echo "# ============================"
-echo "# Internet Diagnostics"
-echo "# ============================"
 
 ADAPTER_STATE="DOWN"
 RX_BYTES="NA"

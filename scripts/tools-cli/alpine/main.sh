@@ -10,12 +10,6 @@ check_tools_dependencies() {
   local tools=("pandoc" "python3" "yt-dlp")
   local missing=0
 
-  echo ""
-  echo "# ============================"
-  echo "# Tools Dependencies"
-  echo "# ============================"
-  echo ""
-
   for tool in "${tools[@]}"; do
     if command -v "$tool" >/dev/null 2>&1; then
       case "$tool" in
@@ -44,11 +38,6 @@ check_tools_dependencies() {
 }
 
 clear
-echo ""
-echo "# ============================"
-echo "# vecnode Tools CLI"
-echo "# ============================"
-echo ""
 
 while true; do
   echo "What would you like to do?"

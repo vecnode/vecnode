@@ -17,11 +17,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 
 clear
-echo ""
-echo "# ============================"
-echo "# SilverBullet Docker Runner"
-echo "# ============================"
-echo ""
+
 
 echo "[INFO] Checking for required tools."
 if ! command -v docker >/dev/null 2>&1; then

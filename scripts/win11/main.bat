@@ -14,12 +14,7 @@ REM   - jq
 REM ---------------------------------------------------------------------------
 
 cls
-echo.
-echo # ============================
-echo # vecnode
-echo # Windows CLI
-echo # ============================
-echo.
+
 
 for %%C in (git curl jq) do (
     where %%C >nul 2>nul
@@ -298,11 +293,8 @@ REM GITHUB BACKUP - USERNAME PROMPT
 REM ---------------------------------------------------------------------------
 
 :github_header
-echo # ============================
-echo # vecnode
-echo # GitHub Repository Backup
-echo # ============================
-echo.
+
+
 
 :prompt_username
 echo.
@@ -420,10 +412,7 @@ REM COMPLETION
 REM ---------------------------------------------------------------------------
 
 :summary
-echo.
-echo # ============================
-echo # Backup process completed
-echo # ============================
-echo.
+
+
 endlocal
 exit /b 0

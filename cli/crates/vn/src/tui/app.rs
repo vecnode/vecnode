@@ -69,7 +69,7 @@ impl AppState {
             menu: MenuKind::Root,
             commands: menu_items(MenuKind::Root),
             selected: 0,
-            logs: vec!["vecnode CLI output panel".to_string()],
+            logs: vec![],
             child: None,
             child_stdin: None,
             rx: None,
@@ -496,7 +496,7 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
 
             let middle = Layout::default()
                 .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(areas[1]);
 
             let button_items: Vec<ListItem> = app

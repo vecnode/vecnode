@@ -12,12 +12,6 @@ set -euo pipefail
 #   ./check_dependencies.sh
 # ---------------------------------------------------------------------------
 
-echo ""
-echo "# ============================"
-echo "# vecnode CLI Dependencies"
-echo "# ============================"
-echo ""
-
 # Initialize variables
 DEPENDENCIES=("git" "curl" "jq" "docker")
 declare -A STATUS
@@ -106,12 +100,6 @@ done
 # INSTALLATION PHASE
 # ---------------------------------------------------------------------------
 
-echo ""
-echo "# ============================"
-echo "# Installing Dependencies"
-echo "# ============================"
-echo ""
-
 # Check if running with sudo privileges
 if [[ $EUID -ne 0 ]]; then
   echo "[INFO] This script needs to install packages. You may be prompted for your password."
@@ -184,12 +172,6 @@ fi
 # ---------------------------------------------------------------------------
 # VERIFICATION PHASE
 # ---------------------------------------------------------------------------
-
-echo ""
-echo "# ============================"
-echo "# Verifying Installation"
-echo "# ============================"
-echo ""
 
 VERIFICATION_FAILED=0
 

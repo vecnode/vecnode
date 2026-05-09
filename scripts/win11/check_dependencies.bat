@@ -12,11 +12,6 @@ REM ---------------------------------------------------------------------------
 
 setlocal EnableExtensions EnableDelayedExpansion
 
-echo.
-echo # ============================
-echo # vecnode CLI Dependencies
-echo # ============================
-echo.
 
 REM Initialize variables
 set "DEPENDENCIES=git curl jq docker"
@@ -107,11 +102,7 @@ REM INSTALLATION PHASE
 REM ---------------------------------------------------------------------------
 
 :install_phase
-echo.
-echo # ============================
-echo # Installing Dependencies
-echo # ============================
-echo.
+
 
 where winget >nul 2>nul
 if !errorlevel! equ 0 (
@@ -159,11 +150,6 @@ REM ---------------------------------------------------------------------------
 REM VERIFICATION PHASE
 REM ---------------------------------------------------------------------------
 
-echo.
-echo # ============================
-echo # Verifying Installation
-echo # ============================
-echo.
 
 set /a VERIFICATION_FAILED=0
 
