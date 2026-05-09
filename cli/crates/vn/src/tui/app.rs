@@ -26,6 +26,7 @@ enum MenuKind {
 #[derive(Clone)]
 enum Action {
     Execute(Vec<&'static str>),
+    Placeholder(&'static str),
     OpenMenu(MenuKind),
     BackToRoot,
 }
@@ -136,6 +137,12 @@ impl AppState {
             }
             Action::Execute(args) => {
                 self.spawn_process(item.label, args);
+            }
+            Action::Placeholder(message) => {
+                self.logs.push(format!("> {}", item.label));
+                self.logs.push(format!("[INFO] {}", message));
+                self.trim_logs();
+                return;
             }
         }
     }
@@ -328,11 +335,7 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
         MenuKind::Root => vec![
             CommandItem {
                 label: "vn ai \"prompt\"",
-                action: Action::Execute(vec!["ai", "prompt"]),
-            },
-            CommandItem {
-                label: "vn ai --session mysession \"prompt\"",
-                action: Action::Execute(vec!["ai", "--session", "mysession", "prompt"]),
+                action: Action::Placeholder("Ongoing local AI API"),
             },
             CommandItem {
                 label: "vn sys info",
@@ -389,6 +392,14 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
             CommandItem {
                 label: "vn run win11-download-all-repos",
                 action: Action::Execute(vec!["run", "win11-download-all-repos"]),
+            },
+            CommandItem {
+                label: "vn run win11-open-docker",
+                action: Action::Execute(vec!["run", "win11-open-docker"]),
+            },
+            CommandItem {
+                label: "vn run win11-check-docker",
+                action: Action::Execute(vec!["run", "win11-check-docker"]),
             },
             CommandItem {
                 label: "vn run win11-run-silverbullet",
@@ -521,7 +532,7 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
                 app.input.clone()
             };
 
-            let input_style = Style::default().fg(Color::White).bg(Color::Black);
+            let input_style = Style::default().fg(Color::White).bg(Color::Green);
 
             let footer = Paragraph::new(vec![
                 Line::from(Span::styled(input_text, input_style)),
