@@ -11,7 +11,24 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 
 echo "[INFO] Building vn CLI..."
-cargo build --manifest-path cli/Cargo.toml -p vn
+if ! cargo build --manifest-path cli/Cargo.toml -p vn; then
+  echo "[ERROR] Build failed."
+  exit 1
+fi
+
+if [[ ! -x ./cli/target/debug/vn ]]; then
+  echo "[ERROR] Binary not found: ./cli/target/debug/vn"
+  exit 1
+fi
 
 echo "[INFO] Launching vn..."
-exec ./cli/target/debug/vn "$@"
+set +e
+./cli/target/debug/vn "$@"
+VN_EXIT=$?
+set -e
+
+if [[ "$VN_EXIT" -ne 0 ]]; then
+  echo "[ERROR] vn exited with code $VN_EXIT."
+fi
+
+exit "$VN_EXIT"
