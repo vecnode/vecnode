@@ -57,6 +57,10 @@ struct AppState {
     rx: Option<Receiver<ProcEvent>>,
     input: String,
     focus: Focus,
+    output_scroll: u16,
+    output_view_lines: usize,
+    follow_output: bool,
+    last_log_count: usize,
 }
 
 impl AppState {
@@ -71,6 +75,33 @@ impl AppState {
             rx: None,
             input: String::new(),
             focus: Focus::Dashboard,
+            output_scroll: 0,
+            output_view_lines: 0,
+            follow_output: true,
+            last_log_count: 1,
+        }
+    }
+
+    fn max_output_scroll(&self) -> u16 {
+        self.logs
+            .len()
+            .saturating_sub(self.output_view_lines)
+            .min(u16::MAX as usize) as u16
+    }
+
+    fn output_page_up(&mut self) {
+        let step = self.output_view_lines.max(1).min(u16::MAX as usize) as u16;
+        self.follow_output = false;
+        self.output_scroll = self.output_scroll.saturating_sub(step);
+    }
+
+    fn output_page_down(&mut self) {
+        let step = self.output_view_lines.max(1).min(u16::MAX as usize) as u16;
+        let max_scroll = self.max_output_scroll();
+        self.output_scroll = self.output_scroll.saturating_add(step).min(max_scroll);
+        if self.output_scroll >= max_scroll {
+            self.follow_output = true;
+            self.output_scroll = max_scroll;
         }
     }
 
@@ -300,6 +331,19 @@ impl AppState {
             let overflow = self.logs.len() - 200;
             self.logs.drain(0..overflow);
         }
+
+        let max_scroll = self.max_output_scroll();
+
+        if self.logs.len() != self.last_log_count {
+            self.last_log_count = self.logs.len();
+            self.follow_output = true;
+        }
+
+        if self.follow_output {
+            self.output_scroll = max_scroll;
+        } else if self.output_scroll > max_scroll {
+            self.output_scroll = max_scroll;
+        }
     }
 }
 
@@ -510,20 +554,25 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
                 })
                 .collect();
 
-            // Auto-scroll output to keep newest log lines visible at the bottom.
-            let visible_lines = middle[1].height.saturating_sub(2) as usize;
-            let scroll_offset = log_lines
-                .len()
-                .saturating_sub(visible_lines)
-                .min(u16::MAX as usize) as u16;
+            app.output_view_lines = middle[1].height.saturating_sub(2) as usize;
+            let max_scroll = app.max_output_scroll();
+            if app.follow_output {
+                app.output_scroll = max_scroll;
+            } else if app.output_scroll > max_scroll {
+                app.output_scroll = max_scroll;
+            }
 
             let output = Paragraph::new(log_lines)
                 .block(Block::default().borders(Borders::ALL).title("CLI Output"))
-                .scroll((scroll_offset, 0));
+                .scroll((app.output_scroll, 0));
 
             let keys_text = match app.focus {
-                Focus::Dashboard => "Tab: input  Up/Down: select  Enter: run  q/Esc: exit",
-                Focus::Input => "Tab: dashboard  Enter: send input  Backspace: delete  q/Esc: exit",
+                Focus::Dashboard => {
+                    "Tab: input  Up/Down: select  Enter: run  ,/.: output page  q/Esc: exit"
+                }
+                Focus::Input => {
+                    "Tab: dashboard  Enter: send input  Backspace: delete  ,/.: output page  q/Esc: exit"
+                }
             };
 
             let input_text = if app.input.is_empty() {
@@ -572,6 +621,12 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
                         if matches!(app.focus, Focus::Dashboard) {
                             app.previous();
                         }
+                    }
+                    KeyCode::Char(',') => {
+                        app.output_page_up();
+                    }
+                    KeyCode::Char('.') => {
+                        app.output_page_down();
                     }
                     KeyCode::Enter => {
                         if matches!(app.focus, Focus::Dashboard) {
