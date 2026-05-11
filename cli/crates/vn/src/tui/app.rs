@@ -21,6 +21,7 @@ enum MenuKind {
     Root,
     RunUbuntu22,
     RunWin11,
+    RunWin11InstallApps,
 }
 
 #[derive(Clone)]
@@ -368,7 +369,7 @@ fn split_to_lines(chunk: String, is_stderr: bool) -> Vec<String> {
 
 fn menu_allowed_on_current_os(menu: MenuKind) -> bool {
     match menu {
-        MenuKind::RunWin11 => cfg!(windows),
+        MenuKind::RunWin11 | MenuKind::RunWin11InstallApps => cfg!(windows),
         MenuKind::RunUbuntu22 => !cfg!(windows),
         MenuKind::Root => true,
     }
@@ -450,8 +451,22 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "win11-run-silverbullet"]),
             },
             CommandItem {
+                label: "vn run win11-install-apps",
+                action: Action::OpenMenu(MenuKind::RunWin11InstallApps),
+            },
+            CommandItem {
                 label: "< Back to Dashboard",
                 action: Action::BackToRoot,
+            },
+        ],
+        MenuKind::RunWin11InstallApps => vec![
+            CommandItem {
+                label: "vn run win11-install-app-wezterm",
+                action: Action::Execute(vec!["run", "win11-install-app-wezterm"]),
+            },
+            CommandItem {
+                label: "< Back to win11",
+                action: Action::OpenMenu(MenuKind::RunWin11),
             },
         ],
     }

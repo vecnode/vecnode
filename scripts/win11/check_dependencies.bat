@@ -3,7 +3,7 @@ REM ---------------------------------------------------------------------------
 REM check_dependencies.bat
 REM Comprehensive dependency checker and installer for vecnode CLI.
 REM
-REM Checks for: git, curl, jq, docker
+REM Checks for: git, curl, jq, docker, winget
 REM Offers automatic installation if any are missing.
 REM
 REM Usage:
@@ -14,7 +14,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 
 REM Initialize variables
-set "DEPENDENCIES=git curl jq docker"
+set "DEPENDENCIES=git curl jq docker winget"
 set /a MISSING_COUNT=0
 set "MISSING_LIST="
 
@@ -57,6 +57,9 @@ for %%D in (%DEPENDENCIES%) do (
                 echo   [WARNING] Found but daemon may not be running
                 set "FOUND=1"
             )
+        ) else if "!DEP!"=="winget" (
+            for /f "tokens=*" %%V in ('winget --version 2^>nul') do set "VERSION=%%V"
+            echo   [OK] winget !VERSION!
         )
     ) else (
         echo   [MISSING]
@@ -104,15 +107,52 @@ REM ---------------------------------------------------------------------------
 :install_phase
 
 
+set "WINGET_MISSING=0"
+for %%M in (!MISSING_LIST!) do (
+    if "%%M"=="winget" set "WINGET_MISSING=1"
+)
+
+if "!WINGET_MISSING!"=="1" (
+    echo [ERROR] winget is missing and is required to install other dependencies automatically.
+    echo Install App Installer from Microsoft Store:
+    echo   https://aka.ms/getwinget
+    exit /b 1
+)
+
+
 where winget >nul 2>nul
 if !errorlevel! equ 0 (
     echo [INFO] Using winget package manager
     echo.
     
     for %%M in (!MISSING_LIST!) do (
-        if "%%M"=="docker" (
+        if "%%M"=="git" (
+            echo [INFO] Installing Git...
+            winget install -e --id Git.Git --accept-package-agreements --accept-source-agreements >nul 2>nul
+            if !errorlevel! equ 0 (
+                echo [OK] git installed
+            ) else (
+                echo [WARNING] git installation may require manual action
+            )
+        ) else if "%%M"=="curl" (
+            echo [INFO] Installing curl...
+            winget install -e --id cURL.cURL --accept-package-agreements --accept-source-agreements >nul 2>nul
+            if !errorlevel! equ 0 (
+                echo [OK] curl installed
+            ) else (
+                echo [WARNING] curl installation may require manual action
+            )
+        ) else if "%%M"=="jq" (
+            echo [INFO] Installing jq...
+            winget install -e --id jqlang.jq --accept-package-agreements --accept-source-agreements >nul 2>nul
+            if !errorlevel! equ 0 (
+                echo [OK] jq installed
+            ) else (
+                echo [WARNING] jq installation may require manual action
+            )
+        ) else if "%%M"=="docker" (
             echo [INFO] Installing Docker...
-            winget install -e --id Docker.DockerDesktop >nul 2>nul
+            winget install -e --id Docker.DockerDesktop --accept-package-agreements --accept-source-agreements >nul 2>nul
             if !errorlevel! equ 0 (
                 echo [OK] Docker installed
             ) else (
@@ -120,7 +160,7 @@ if !errorlevel! equ 0 (
             )
         ) else (
             echo [INFO] Installing %%M...
-            winget install -e --id %%M >nul 2>nul
+            winget install -e --id %%M --accept-package-agreements --accept-source-agreements >nul 2>nul
             if !errorlevel! equ 0 (
                 echo [OK] %%M installed
             ) else (
@@ -141,6 +181,8 @@ if !errorlevel! equ 0 (
             echo   - Curl: https://curl.se/download.html
         ) else if "%%M"=="jq" (
             echo   - jq: https://stedolan.github.io/jq/download/
+        ) else if "%%M"=="winget" (
+            echo   - winget (App Installer): https://aka.ms/getwinget
         )
     )
     exit /b 1
@@ -173,6 +215,9 @@ for %%M in (!MISSING_LIST!) do (
         ) else if "!DEP!"=="docker" (
             for /f "tokens=*" %%V in ('docker --version 2^>nul') do set "VERSION=%%V"
             echo   Verifying !DEP!... [OK] !VERSION!
+        ) else if "!DEP!"=="winget" (
+            for /f "tokens=*" %%V in ('winget --version 2^>nul') do set "VERSION=%%V"
+            echo   Verifying !DEP!... [OK] winget !VERSION!
         )
     ) else (
         echo   Verifying !DEP!... [FAILED]
