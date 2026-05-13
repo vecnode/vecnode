@@ -1,0 +1,8 @@
+[book]
+title = "vecnode Docs"
+authors = ["vecnode"]
+description = "Markdown docs for the vecnode CLI and TUI."
+src = "."
+
+[build]
+create-missing = false

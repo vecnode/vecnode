@@ -1,13 +1,11 @@
 # vn CLI (Rust)
 
-Cross-platform personal CLI for vecnode.
+Cross-platform personal vecnode Rust CLI.
 
 ## Goals
 
 - Single Rust binary command surface
-- Local/offline AI via Ollama
 - Script delegation to existing shell and batch workflows
-- Cross-platform system and operational commands
 - Ratatui interactive mode for terminal-first UX
 
 ## Install (local workspace)
@@ -30,14 +28,6 @@ cargo install --path crates/vn
 ```bash
 # Interactive Ratatui screen
 vn
-
-# AI
-vn ai "explain this docker error"
-vn ai --model llama3.2 --stream "summarize this"
-
-# Session persistence
-vn ai --session mysession "start topic"
-vn ai --session mysession "continue topic"
 
 # System
 vn sys info
@@ -63,7 +53,6 @@ vn run tools-alpine
 Auto-created on first run:
 
 - Linux: ~/.config/vn/config.toml
-- macOS: ~/Library/Application Support/vn/config.toml (platform-specific config path)
 - Windows: %APPDATA%\\vn\\config.toml
 
 Default example:

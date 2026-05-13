@@ -1,16 +1,17 @@
-# VN CLI Repro Guide
+# VN CLI
+
+This is the main repsitory for vecnode CLI. 
 
 This project does not require a root launcher script to open the TUI.
-The CLI is in the Rust workspace under cli/, and the TUI opens when vn runs with no subcommand.
+The CLI is in the Rust workspace under `cli/`, and the TUI opens when `vn` runs with no subcommand.
 
 
 ## Clickable Launchers
 
-If you want to click one file and open vn directly:
+If you want to click one file and open `vn` directly:
 
-- Windows: double-click run_cli.bat
-- Linux/macOS (terminal): run ./run_cli.sh
-- macOS (Finder double-click): use run_cli.command
+- Windows: (double-click) `run_cli.bat`
+- Linux (terminal): run `./run_cli.sh`
 
 All launchers do the same flow:
 
@@ -27,8 +28,6 @@ cargo build --manifest-path cli/Cargo.toml -p vn
 ```
 
 
-
-
 ## Run From Repository Root
 
 From the repository root folder, run:
@@ -37,7 +36,7 @@ From the repository root folder, run:
 cargo run --manifest-path cli/Cargo.toml -p vn --
 ```
 
-That launches the vn binary and opens the Ratatui interface.
+That launches the `vn` binary and opens the interface.
 
 ## Build Once, Then Run Binary
 

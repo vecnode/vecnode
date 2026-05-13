@@ -443,6 +443,10 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "win11-open-docker"]),
             },
             CommandItem {
+                label: "vn run win11-open-docs",
+                action: Action::Execute(vec!["run", "win11-open-docs"]),
+            },
+            CommandItem {
                 label: "vn run win11-check-docker",
                 action: Action::Execute(vec!["run", "win11-check-docker"]),
             },
