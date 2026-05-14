@@ -1,4 +1,4 @@
-# Vecnode Rust CLI - Security Policy
+# vecnode Rust CLI - Security Policy
 
 **Last Updated:** May 14, 2026  
 **Version:** 0.1
