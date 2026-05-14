@@ -11,6 +11,7 @@ pub fn run(args: DockerArgs, loaded: &LoadedConfig) -> Result<()> {
             if matches!(service.as_deref(), Some("silverbullet")) {
                 crate::commands::run::run_named_script("silverbullet", loaded)
             } else if let Some(name) = service {
+                validate_docker_service_name(&name)?;
                 run_cmd("docker", &["start", &name])
             } else {
                 println!("Use: vn docker up <service>");
@@ -19,6 +20,7 @@ pub fn run(args: DockerArgs, loaded: &LoadedConfig) -> Result<()> {
         }
         DockerSubcommand::Down { service } => {
             if let Some(name) = service {
+                validate_docker_service_name(&name)?;
                 run_cmd("docker", &["stop", &name])
             } else {
                 println!("Use: vn docker down <service>");
@@ -42,4 +44,21 @@ fn run_cmd(program: &str, args: &[&str]) -> Result<()> {
     } else {
         Err(anyhow!("command exited with status: {}", status))
     }
+}
+
+/// Validate Docker service name to prevent injection and enforce Docker naming rules.
+/// Docker allows alphanumerics, underscores, periods, and hyphens.
+fn validate_docker_service_name(name: &str) -> Result<()> {
+    if name.is_empty() {
+        return Err(anyhow!("docker service name cannot be empty"));
+    }
+
+    if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.') {
+        return Err(anyhow!(
+            "invalid docker service name '{}': only alphanumerics, underscore, hyphen, and period allowed",
+            name
+        ));
+    }
+
+    Ok(())
 }

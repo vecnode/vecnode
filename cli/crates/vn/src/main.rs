@@ -1,6 +1,5 @@
 mod commands;
 mod config;
-mod ollama;
 mod tui;
 
 use anyhow::Result;

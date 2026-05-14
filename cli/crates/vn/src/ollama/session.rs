@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionFile {
     pub name: String,
@@ -37,11 +40,28 @@ impl SessionFile {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("failed to create session directory: {}", parent.display()))?;
+            // Set directory permissions to 0o700 (user only) on Unix
+            #[cfg(unix)]
+            {
+                let perms = fs::Permissions::from_mode(0o700);
+                fs::set_permissions(parent, perms)
+                    .with_context(|| format!("failed to set session directory permissions (0o700) for: {}", parent.display()))?;
+            }
         }
 
         let content = serde_json::to_string_pretty(self).context("failed to serialize session file")?;
         fs::write(path, content)
-            .with_context(|| format!("failed to write session file: {}", path.display()))
+            .with_context(|| format!("failed to write session file: {}", path.display()))?;
+        
+        // Set file permissions to 0o600 (user only) on Unix
+        #[cfg(unix)]
+        {
+            let perms = fs::Permissions::from_mode(0o600);
+            fs::set_permissions(path, perms)
+                .with_context(|| format!("failed to set session file permissions (0o600) for: {}", path.display()))?;
+        }
+
+        Ok(())
     }
 
     pub fn append_user(&mut self, content: String) {

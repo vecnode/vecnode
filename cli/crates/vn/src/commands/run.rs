@@ -181,21 +181,26 @@ fn windows_path_to_wsl(path: &Path) -> Result<String> {
 
 fn detect_repo_root(loaded: &LoadedConfig) -> Result<PathBuf> {
     if let Ok(path) = env::var("VECNODE_REPO_ROOT") {
-        let p = PathBuf::from(path);
-        if p.join("scripts").exists() {
+        let p = PathBuf::from(&path);
+        if is_valid_repo_root(&p) {
             return Ok(p);
+        } else {
+            eprintln!(
+                "WARNING: VECNODE_REPO_ROOT={} does not look like a valid vecnode repository (missing .git directory)",
+                path
+            );
         }
     }
 
     if let Some(from_config) = loaded.path.parent().and_then(Path::parent) {
-        if from_config.join("scripts").exists() {
+        if is_valid_repo_root(from_config) {
             return Ok(from_config.to_path_buf());
         }
     }
 
     let cwd = env::current_dir().context("failed to read current directory")?;
     for ancestor in cwd.ancestors() {
-        if ancestor.join("scripts").exists() {
+        if is_valid_repo_root(ancestor) {
             return Ok(ancestor.to_path_buf());
         }
     }
@@ -203,4 +208,11 @@ fn detect_repo_root(loaded: &LoadedConfig) -> Result<PathBuf> {
     bail!(
         "could not locate repository root. Run inside the vecnode repo or set VECNODE_REPO_ROOT"
     )
+}
+
+/// Validate that a path is a vecnode repository by checking for .git directory and scripts subdirectory.
+fn is_valid_repo_root(path: &Path) -> bool {
+    let has_git = path.join(".git").exists();
+    let has_scripts = path.join("scripts").exists();
+    has_git && has_scripts
 }

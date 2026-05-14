@@ -1,6 +1,6 @@
 # VN CLI
 
-This is the main repsitory for vecnode CLI. 
+This is the main repository for vecnode CLI. 
 
 This project does not require a root launcher script to open the TUI.
 The CLI is in the Rust workspace under `cli/`, and the TUI opens when `vn` runs with no subcommand.

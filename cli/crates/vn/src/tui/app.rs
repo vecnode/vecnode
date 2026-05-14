@@ -48,6 +48,12 @@ enum Focus {
     Input,
 }
 
+struct DockerPanelData {
+    available: bool,
+    images: Vec<String>,
+    ports: Vec<String>,
+}
+
 struct AppState {
     menu: MenuKind,
     commands: Vec<CommandItem>,
@@ -62,11 +68,12 @@ struct AppState {
     output_view_lines: usize,
     follow_output: bool,
     last_log_count: usize,
+    docker_panel: DockerPanelData,
 }
 
 impl AppState {
     fn new() -> Self {
-        Self {
+        let mut app = Self {
             menu: MenuKind::Root,
             commands: menu_items(MenuKind::Root),
             selected: 0,
@@ -80,7 +87,97 @@ impl AppState {
             output_view_lines: 0,
             follow_output: true,
             last_log_count: 1,
+            docker_panel: DockerPanelData {
+                available: false,
+                images: Vec::new(),
+                ports: Vec::new(),
+            },
+        };
+
+        app.refresh_docker_panel();
+        app
+    }
+
+    fn refresh_docker_panel(&mut self) {
+        let images_out = Command::new("docker")
+            .args(["images", "--format", "{{.Repository}}:{{.Tag}}"])
+            .output();
+
+        let images_out = match images_out {
+            Ok(out) if out.status.success() => out,
+            _ => {
+                self.docker_panel.available = false;
+                self.docker_panel.images.clear();
+                self.docker_panel.ports.clear();
+                return;
+            }
+        };
+
+        let ports_out = Command::new("docker")
+            .args(["ps", "--format", "{{.Ports}}"])
+            .output();
+
+        let ports_out = match ports_out {
+            Ok(out) if out.status.success() => out,
+            _ => {
+                self.docker_panel.available = false;
+                self.docker_panel.images.clear();
+                self.docker_panel.ports.clear();
+                return;
+            }
+        };
+
+        let images_text = String::from_utf8_lossy(&images_out.stdout);
+        let mut images: Vec<String> = images_text
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty() && *line != "<none>:<none>")
+            .take(6)
+            .map(ToOwned::to_owned)
+            .collect();
+        images.sort();
+        images.dedup();
+
+        let ports_text = String::from_utf8_lossy(&ports_out.stdout);
+        let mut ports: Vec<String> = ports_text
+            .lines()
+            .flat_map(extract_host_ports)
+            .collect();
+        ports.sort();
+        ports.dedup();
+
+        self.docker_panel.available = true;
+        self.docker_panel.images = images;
+        self.docker_panel.ports = ports;
+    }
+
+    fn docker_panel_lines(&self) -> Vec<Line<'static>> {
+        if !self.docker_panel.available {
+            return vec![Line::from("Docker is not available")];
         }
+
+        let mut lines = Vec::new();
+
+        lines.push(Line::from("Docker Images:"));
+        if self.docker_panel.images.is_empty() {
+            lines.push(Line::from("- none"));
+        } else {
+            for image in self.docker_panel.images.iter().take(3) {
+                lines.push(Line::from(format!("- {}", image)));
+            }
+        }
+
+        lines.push(Line::from(""));
+        lines.push(Line::from("Docker Ports:"));
+        if self.docker_panel.ports.is_empty() {
+            lines.push(Line::from("- none"));
+        } else {
+            for port in self.docker_panel.ports.iter().take(4) {
+                lines.push(Line::from(format!("- {}", port)));
+            }
+        }
+
+        lines
     }
 
     fn max_output_scroll(&self) -> u16 {
@@ -367,6 +464,27 @@ fn split_to_lines(chunk: String, is_stderr: bool) -> Vec<String> {
     out
 }
 
+fn extract_host_ports(line: &str) -> Vec<String> {
+    line.split(',')
+        .filter_map(|entry| {
+            let part = entry.trim();
+            if part.is_empty() {
+                return None;
+            }
+
+            let mapped = part.split("->").next().unwrap_or(part).trim();
+            let host_segment = mapped.rsplit(':').next().unwrap_or("").trim();
+            let host_port = host_segment.split('/').next().unwrap_or("").trim();
+
+            if host_port.chars().all(|c| c.is_ascii_digit()) && !host_port.is_empty() {
+                Some(host_port.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 fn menu_allowed_on_current_os(menu: MenuKind) -> bool {
     match menu {
         MenuKind::RunWin11 | MenuKind::RunWin11InstallApps => cfg!(windows),
@@ -518,6 +636,11 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
                 .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
                 .split(areas[1]);
 
+            let left_panels = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(middle[0]);
+
             let button_items: Vec<ListItem> = app
                 .commands
                 .iter()
@@ -549,6 +672,9 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
 
             let dashboard = List::new(button_items)
                 .block(Block::default().borders(Borders::ALL).title("Dashboard"));
+
+            let docker = Paragraph::new(app.docker_panel_lines())
+                .block(Block::default().borders(Borders::ALL).title("Docker"));
 
             let log_lines: Vec<Line> = app
                 .logs
@@ -587,10 +713,10 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
 
             let keys_text = match app.focus {
                 Focus::Dashboard => {
-                    "Tab: input  Up/Down: select  Enter: run  ,/.: output page  q/Esc: exit"
+                    "Tab: input  Up/Down: select  Enter: run  R: refresh docker  ,/.: output page  q/Esc: exit"
                 }
                 Focus::Input => {
-                    "Tab: dashboard  Enter: send input  Backspace: delete  ,/.: output page  q/Esc: exit"
+                    "Tab: dashboard  Enter: send input  Backspace: delete  R: refresh docker  ,/.: output page  q/Esc: exit"
                 }
             };
 
@@ -609,7 +735,8 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
             .block(Block::default().borders(Borders::ALL).title("Input"));
 
             frame.render_widget(header, areas[0]);
-            frame.render_stateful_widget(dashboard, middle[0], &mut list_state);
+            frame.render_stateful_widget(dashboard, left_panels[0], &mut list_state);
+            frame.render_widget(docker, left_panels[1]);
             frame.render_widget(output, middle[1]);
             frame.render_widget(footer, areas[2]);
         })?;
@@ -646,6 +773,9 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
                     }
                     KeyCode::Char('.') => {
                         app.output_page_down();
+                    }
+                    KeyCode::Char('r') | KeyCode::Char('R') => {
+                        app.refresh_docker_panel();
                     }
                     KeyCode::Enter => {
                         if matches!(app.focus, Focus::Dashboard) {

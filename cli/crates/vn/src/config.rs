@@ -3,9 +3,13 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+
 #[derive(Debug, Clone)]
 pub struct LoadedConfig {
     pub path: PathBuf,
+    #[allow(dead_code)]
     pub config: AppConfig,
 }
 
@@ -57,6 +61,8 @@ pub fn load_or_init(override_path: Option<PathBuf>) -> Result<LoadedConfig> {
 
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("failed to create config dir: {}", parent.display()))?;
+        // Set directory permissions to 0o700 (user only) on Unix
+        set_dir_permissions(&parent)?;
     }
 
     let config = if path.exists() {
@@ -69,12 +75,16 @@ pub fn load_or_init(override_path: Option<PathBuf>) -> Result<LoadedConfig> {
         let toml_content = toml::to_string_pretty(&cfg).context("failed to serialize default config")?;
         fs::write(&path, toml_content)
             .with_context(|| format!("failed to write default config: {}", path.display()))?;
+        // Set file permissions to 0o600 (user only) on Unix
+        set_file_permissions(&path)?;
         cfg
     };
 
     let sessions_dir = expand_tilde(&config.sessions.dir);
     fs::create_dir_all(&sessions_dir)
         .with_context(|| format!("failed to create sessions dir: {}", sessions_dir.display()))?;
+    // Set directory permissions to 0o700 (user only) on Unix
+    set_dir_permissions(&sessions_dir)?;
 
     Ok(LoadedConfig { path, config })
 }
@@ -101,4 +111,38 @@ pub fn expand_tilde(input: &str) -> PathBuf {
     }
 
     Path::new(input).to_path_buf()
+}
+
+/// Set file permissions to 0o600 (user read/write only) on Unix.
+/// On Windows, this is a no-op (NTFS ACLs are inherited from parent).
+#[cfg(unix)]
+fn set_file_permissions(path: &Path) -> Result<()> {
+    let perms = fs::Permissions::from_mode(0o600);
+    fs::set_permissions(path, perms)
+        .with_context(|| format!("failed to set file permissions (0o600) for: {}", path.display()))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_file_permissions(_path: &Path) -> Result<()> {
+    // On Windows, permissions are inherited from the config directory created by `dirs::config_dir()`,
+    // which respects user profile ACLs. No additional action needed.
+    Ok(())
+}
+
+/// Set directory permissions to 0o700 (user only) on Unix.
+/// On Windows, this is a no-op (NTFS ACLs are inherited from parent).
+#[cfg(unix)]
+fn set_dir_permissions(path: &Path) -> Result<()> {
+    let perms = fs::Permissions::from_mode(0o700);
+    fs::set_permissions(path, perms)
+        .with_context(|| format!("failed to set directory permissions (0o700) for: {}", path.display()))?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_dir_permissions(_path: &Path) -> Result<()> {
+    // On Windows, permissions are inherited from parent directories created by `dirs::*_dir()` crates.
+    // No additional action needed.
+    Ok(())
 }
