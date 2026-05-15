@@ -67,6 +67,9 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "win11-check-internet" => ScriptTarget {
             relative_path: "scripts/win11/check_internet.bat",
         },
+        "win11-check-local-network" => ScriptTarget {
+            relative_path: "scripts/win11/check_local_network.bat",
+        },
         "win11-check-dependencies" => ScriptTarget {
             relative_path: "scripts/win11/check_dependencies.bat",
         },
@@ -100,11 +103,17 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "win11-open-media-processor" => ScriptTarget {
             relative_path: "scripts/win11/open_media_processor.bat",
         },
+        "win11-check-ollama" => ScriptTarget {
+            relative_path: "scripts/win11/check_ollama.bat",
+        },
+        "win11-open-ollama" => ScriptTarget {
+            relative_path: "scripts/win11/open_ollama.bat",
+        },
         "tools-alpine" => ScriptTarget {
             relative_path: "scripts/tools-cli/alpine/main.sh",
         },
         _ => bail!(
-            "unknown script name '{}'. Supported: ubuntu22, ubuntu22-check-internet, ubuntu22-check-dependencies, ubuntu22-download-all-repos, ubuntu22-download-all-orgs, ubuntu22-run-cli-container, ubuntu22-run-silverbullet, win11, win11-check-internet, win11-check-dependencies, win11-download-all-repos, win11-open-docker, win11-open-docs, win11-check-docker, win11-remove-containers, win11-remove-images, win11-download-all-orgs, win11-run-cli-container, win11-open-silverbullet, win11-open-media-processor, tools-alpine, silverbullet",
+            "unknown script name '{}'. Supported: ubuntu22, ubuntu22-check-internet, ubuntu22-check-dependencies, ubuntu22-download-all-repos, ubuntu22-download-all-orgs, ubuntu22-run-cli-container, ubuntu22-run-silverbullet, win11, win11-check-internet, win11-check-local-network, win11-check-dependencies, win11-download-all-repos, win11-open-docker, win11-open-docs, win11-check-docker, win11-remove-containers, win11-remove-images, win11-download-all-orgs, win11-run-cli-container, win11-open-silverbullet, win11-open-media-processor, win11-check-ollama, win11-open-ollama, tools-alpine, silverbullet",
             name
         ),
     };

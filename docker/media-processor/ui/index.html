@@ -4,149 +4,21 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>vecnode media-processor</title>
-  <style>
-    :root {
-      --bg-1: #f3f6ef;
-      --bg-2: #e4efe5;
-      --ink: #1a2a1f;
-      --muted: #3f5a49;
-      --accent: #0c7c59;
-      --accent-2: #f29e4c;
-      --panel: rgba(255, 255, 255, 0.8);
-      --border: rgba(12, 124, 89, 0.25);
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
-      color: var(--ink);
-      min-height: 100vh;
-      background:
-        radial-gradient(circle at 15% 10%, rgba(242, 158, 76, 0.28), transparent 45%),
-        radial-gradient(circle at 90% 80%, rgba(12, 124, 89, 0.28), transparent 40%),
-        linear-gradient(140deg, var(--bg-1), var(--bg-2));
-      display: grid;
-      place-items: center;
-      padding: 24px;
-    }
-
-    .card {
-      width: min(760px, 100%);
-      background: var(--panel);
-      backdrop-filter: blur(4px);
-      border: 1px solid var(--border);
-      border-radius: 20px;
-      padding: 28px;
-      box-shadow: 0 16px 40px rgba(26, 42, 31, 0.12);
-      animation: rise 500ms ease-out;
-    }
-
-    h1 {
-      margin: 0 0 8px;
-      font-size: clamp(1.6rem, 4vw, 2.2rem);
-      letter-spacing: 0.02em;
-    }
-
-    p {
-      margin: 0;
-      color: var(--muted);
-    }
-
-    .row {
-      display: grid;
-      gap: 12px;
-      margin-top: 18px;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    }
-
-    .panel {
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 14px;
-      background: rgba(255, 255, 255, 0.75);
-    }
-
-    .label {
-      font-size: 0.85rem;
-      color: var(--muted);
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.04em;
-    }
-
-    code {
-      font-size: 0.95rem;
-      color: #13462f;
-      background: rgba(12, 124, 89, 0.1);
-      padding: 3px 6px;
-      border-radius: 6px;
-    }
-
-    button {
-      margin-top: 20px;
-      border: 0;
-      border-radius: 10px;
-      background: linear-gradient(90deg, var(--accent), #0f9d73);
-      color: white;
-      padding: 11px 14px;
-      font-size: 0.95rem;
-      cursor: pointer;
-    }
-
-    button:hover {
-      filter: brightness(1.05);
-    }
-
-    .status {
-      margin-top: 12px;
-      min-height: 1.2rem;
-      font-weight: 600;
-    }
-
-    .ok {
-      color: #126843;
-    }
-
-    .err {
-      color: #a43320;
-    }
-
-    @keyframes rise {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-  </style>
 </head>
 <body>
-  <main class="card">
+  <main>
     <h1>vecnode media-processor</h1>
     <p>Container is running with a web UI and processing API.</p>
 
-    <section class="row">
-      <div class="panel">
-        <div class="label">UI</div>
-        <code>http://localhost:8085</code>
-      </div>
-      <div class="panel">
-        <div class="label">API</div>
-        <code>http://localhost:8086</code>
-      </div>
-      <div class="panel">
-        <div class="label">Health</div>
-        <code>GET /health</code>
-      </div>
-      <div class="panel">
-        <div class="label">Process</div>
-        <code>POST /process</code>
-      </div>
+    <section>
+      <p><strong>UI:</strong> <code>http://localhost:8085</code></p>
+      <p><strong>API:</strong> <code>http://localhost:8086</code></p>
+      <p><strong>Health:</strong> <code>GET /health</code></p>
+      <p><strong>Process:</strong> <code>POST /process</code></p>
     </section>
 
     <button id="check">Check API Health</button>
-    <div id="status" class="status"></div>
+    <div id="status"></div>
   </main>
 
   <script>
@@ -155,7 +27,6 @@
 
     async function checkHealth() {
       statusNode.textContent = "Checking API...";
-      statusNode.className = "status";
       try {
         const response = await fetch("http://localhost:8086/health");
         if (!response.ok) {
@@ -163,10 +34,8 @@
         }
         const data = await response.json();
         statusNode.textContent = "API is healthy at " + data.time;
-        statusNode.className = "status ok";
       } catch (error) {
         statusNode.textContent = "API check failed: " + error.message;
-        statusNode.className = "status err";
       }
     }
 

@@ -21,17 +21,17 @@ enum MenuKind {
     Root,
     RunUbuntu22,
     RunWin11,
-    RunWin11Internet,
+    RunWin11Network,
     RunWin11Dependencies,
     RunWin11Github,
     RunWin11Docker,
     RunWin11Open,
+    RunWin11Ai,
 }
 
 #[derive(Clone)]
 enum Action {
     Execute(Vec<&'static str>),
-    Placeholder(&'static str),
     OpenMenu(MenuKind),
     BackToRoot,
 }
@@ -272,12 +272,6 @@ impl AppState {
             Action::Execute(args) => {
                 self.spawn_process(item.label, args);
             }
-            Action::Placeholder(message) => {
-                self.logs.push(format!("> {}", item.label));
-                self.logs.push(format!("[INFO] {}", message));
-                self.trim_logs();
-                return;
-            }
         }
     }
 
@@ -494,11 +488,12 @@ fn extract_host_ports(line: &str) -> Vec<String> {
 fn menu_allowed_on_current_os(menu: MenuKind) -> bool {
     match menu {
         MenuKind::RunWin11
-        | MenuKind::RunWin11Internet
+        | MenuKind::RunWin11Network
         | MenuKind::RunWin11Dependencies
         | MenuKind::RunWin11Github
         | MenuKind::RunWin11Docker
-        | MenuKind::RunWin11Open => cfg!(windows),
+        | MenuKind::RunWin11Open
+        | MenuKind::RunWin11Ai => cfg!(windows),
         MenuKind::RunUbuntu22 => !cfg!(windows),
         MenuKind::Root => true,
     }
@@ -507,10 +502,6 @@ fn menu_allowed_on_current_os(menu: MenuKind) -> bool {
 fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
     match menu {
         MenuKind::Root => vec![
-            CommandItem {
-                label: "vn ai \"prompt\"",
-                action: Action::Placeholder("Ongoing local AI API"),
-            },
             CommandItem {
                 label: "vn sys info",
                 action: Action::Execute(vec!["sys", "info"]),
@@ -556,8 +547,12 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
         ],
         MenuKind::RunWin11 => vec![
             CommandItem {
-                label: "vn run win11-internet",
-                action: Action::OpenMenu(MenuKind::RunWin11Internet),
+                label: "vn run win11-ai",
+                action: Action::OpenMenu(MenuKind::RunWin11Ai),
+            },
+            CommandItem {
+                label: "vn run win11-network",
+                action: Action::OpenMenu(MenuKind::RunWin11Network),
             },
             CommandItem {
                 label: "vn run win11-dependencies",
@@ -580,7 +575,11 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::BackToRoot,
             },
         ],
-        MenuKind::RunWin11Internet => vec![
+        MenuKind::RunWin11Network => vec![
+            CommandItem {
+                label: "vn run win11-check-local-network",
+                action: Action::Execute(vec!["run", "win11-check-local-network"]),
+            },
             CommandItem {
                 label: "vn run win11-check-internet",
                 action: Action::Execute(vec!["run", "win11-check-internet"]),
@@ -644,6 +643,20 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
             CommandItem {
                 label: "vn run win11-open-media-processor",
                 action: Action::Execute(vec!["run", "win11-open-media-processor"]),
+            },
+            CommandItem {
+                label: "< Back to win11",
+                action: Action::OpenMenu(MenuKind::RunWin11),
+            },
+        ],
+        MenuKind::RunWin11Ai => vec![
+            CommandItem {
+                label: "vn run win11-check-ollama",
+                action: Action::Execute(vec!["run", "win11-check-ollama"]),
+            },
+            CommandItem {
+                label: "vn run win11-open-ollama",
+                action: Action::Execute(vec!["run", "win11-open-ollama"]),
             },
             CommandItem {
                 label: "< Back to win11",
