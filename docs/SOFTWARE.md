@@ -31,17 +31,17 @@ When running on Windows hosts, the Windows menu exposes:
 - `vn run win11-check-dependencies`
 - `vn run win11-download-all-repos`
 - `vn run win11-open-docker`
-- `vn run win11-open-docs`
 - `vn run win11-check-docker`
-- `vn run win11-run-silverbullet`
-- `vn run win11-install-apps`
+- `vn run win11-open-containers`
 - `< Back to Dashboard`
 
 ## Windows 11 Apps Submenu
 
 The apps submenu currently includes:
 
-- `vn run win11-install-app-wezterm`
+- `vn run win11-open-docs`
+- `vn run win11-open-silverbullet`
+- `vn run win11-open-media-processor`
 - `< Back to win11`
 
 ## Controls

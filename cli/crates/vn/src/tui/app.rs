@@ -561,19 +561,11 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "win11-open-docker"]),
             },
             CommandItem {
-                label: "vn run win11-open-docs",
-                action: Action::Execute(vec!["run", "win11-open-docs"]),
-            },
-            CommandItem {
                 label: "vn run win11-check-docker",
                 action: Action::Execute(vec!["run", "win11-check-docker"]),
             },
             CommandItem {
-                label: "vn run win11-run-silverbullet",
-                action: Action::Execute(vec!["run", "win11-run-silverbullet"]),
-            },
-            CommandItem {
-                label: "vn run win11-install-apps",
+                label: "vn run win11-open-containers",
                 action: Action::OpenMenu(MenuKind::RunWin11InstallApps),
             },
             CommandItem {
@@ -583,8 +575,16 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
         ],
         MenuKind::RunWin11InstallApps => vec![
             CommandItem {
-                label: "vn run win11-install-app-wezterm",
-                action: Action::Execute(vec!["run", "win11-install-app-wezterm"]),
+                label: "vn run win11-open-docs",
+                action: Action::Execute(vec!["run", "win11-open-docs"]),
+            },
+            CommandItem {
+                label: "vn run win11-open-silverbullet",
+                action: Action::Execute(vec!["run", "win11-open-silverbullet"]),
+            },
+            CommandItem {
+                label: "vn run win11-open-media-processor",
+                action: Action::Execute(vec!["run", "win11-open-media-processor"]),
             },
             CommandItem {
                 label: "< Back to win11",
