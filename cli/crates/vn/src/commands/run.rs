@@ -82,6 +82,12 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "win11-check-docker" => ScriptTarget {
             relative_path: "scripts/win11/check_docker.bat",
         },
+        "win11-remove-containers" => ScriptTarget {
+            relative_path: "scripts/win11/remove_containers.bat",
+        },
+        "win11-remove-images" => ScriptTarget {
+            relative_path: "scripts/win11/remove_images.bat",
+        },
         "win11-download-all-orgs" => ScriptTarget {
             relative_path: "scripts/win11/download_all_orgs.bat",
         },
@@ -98,7 +104,7 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
             relative_path: "scripts/tools-cli/alpine/main.sh",
         },
         _ => bail!(
-            "unknown script name '{}'. Supported: ubuntu22, ubuntu22-check-internet, ubuntu22-check-dependencies, ubuntu22-download-all-repos, ubuntu22-download-all-orgs, ubuntu22-run-cli-container, ubuntu22-run-silverbullet, win11, win11-check-internet, win11-check-dependencies, win11-download-all-repos, win11-open-docker, win11-open-docs, win11-check-docker, win11-download-all-orgs, win11-run-cli-container, win11-open-silverbullet, win11-open-media-processor, tools-alpine, silverbullet",
+            "unknown script name '{}'. Supported: ubuntu22, ubuntu22-check-internet, ubuntu22-check-dependencies, ubuntu22-download-all-repos, ubuntu22-download-all-orgs, ubuntu22-run-cli-container, ubuntu22-run-silverbullet, win11, win11-check-internet, win11-check-dependencies, win11-download-all-repos, win11-open-docker, win11-open-docs, win11-check-docker, win11-remove-containers, win11-remove-images, win11-download-all-orgs, win11-run-cli-container, win11-open-silverbullet, win11-open-media-processor, tools-alpine, silverbullet",
             name
         ),
     };

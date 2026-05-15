@@ -10,9 +10,9 @@ use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Terminal;
 use std::env;
 use std::io::Read;
-use std::io::{self, Stdout, Write};
-use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
+use std::io::{self, Stdout};
+use std::process::{Child, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
@@ -21,7 +21,11 @@ enum MenuKind {
     Root,
     RunUbuntu22,
     RunWin11,
-    RunWin11InstallApps,
+    RunWin11Internet,
+    RunWin11Dependencies,
+    RunWin11Github,
+    RunWin11Docker,
+    RunWin11Open,
 }
 
 #[derive(Clone)]
@@ -54,14 +58,19 @@ struct DockerPanelData {
     ports: Vec<String>,
 }
 
+struct RunningProcess {
+    label: String,
+    child: Child,
+}
+
 struct AppState {
     menu: MenuKind,
     commands: Vec<CommandItem>,
     selected: usize,
     logs: Vec<String>,
-    child: Option<Child>,
-    child_stdin: Option<ChildStdin>,
-    rx: Option<Receiver<ProcEvent>>,
+    running: Vec<RunningProcess>,
+    tx: Sender<ProcEvent>,
+    rx: Receiver<ProcEvent>,
     input: String,
     focus: Focus,
     output_scroll: u16,
@@ -73,14 +82,16 @@ struct AppState {
 
 impl AppState {
     fn new() -> Self {
+        let (tx, rx) = mpsc::channel::<ProcEvent>();
+
         let mut app = Self {
             menu: MenuKind::Root,
             commands: menu_items(MenuKind::Root),
             selected: 0,
             logs: vec![],
-            child: None,
-            child_stdin: None,
-            rx: None,
+            running: Vec::new(),
+            tx,
+            rx,
             input: String::new(),
             focus: Focus::Dashboard,
             output_scroll: 0,
@@ -172,7 +183,7 @@ impl AppState {
         if self.docker_panel.ports.is_empty() {
             lines.push(Line::from("- none"));
         } else {
-            for port in self.docker_panel.ports.iter().take(4) {
+            for port in &self.docker_panel.ports {
                 lines.push(Line::from(format!("- {}", port)));
             }
         }
@@ -223,12 +234,6 @@ impl AppState {
 
     fn activate_selected(&mut self) {
         if self.commands.is_empty() {
-            return;
-        }
-
-        if self.child.is_some() {
-            self.logs.push("[INFO] A command is already running.".to_string());
-            self.trim_logs();
             return;
         }
 
@@ -293,7 +298,7 @@ impl AppState {
         cmd.args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
-            .stdin(Stdio::piped());
+            .stdin(Stdio::null());
 
         let mut child = match cmd.spawn() {
             Ok(c) => c,
@@ -305,13 +310,11 @@ impl AppState {
             }
         };
 
-        let stdin = child.stdin.take();
         let stdout = child.stdout.take();
         let stderr = child.stderr.take();
-        let (tx, rx) = mpsc::channel::<ProcEvent>();
 
         if let Some(mut out) = stdout {
-            let tx_out = tx.clone();
+            let tx_out = self.tx.clone();
             thread::spawn(move || {
                 let mut buf = [0u8; 1024];
                 loop {
@@ -330,7 +333,7 @@ impl AppState {
         }
 
         if let Some(mut err) = stderr {
-            let tx_err = tx.clone();
+            let tx_err = self.tx.clone();
             thread::spawn(move || {
                 let mut buf = [0u8; 1024];
                 loop {
@@ -348,67 +351,68 @@ impl AppState {
             });
         }
 
-        self.logs.push("[INFO] Process started.".to_string());
-        self.child = Some(child);
-        self.child_stdin = stdin;
-        self.rx = Some(rx);
-        self.focus = Focus::Input;
+        self.logs
+            .push("[INFO] Process started in background.".to_string());
+        self.running.push(RunningProcess {
+            label: label.to_string(),
+            child,
+        });
         self.trim_logs();
     }
 
     fn send_input_line(&mut self) {
-        if self.input.is_empty() {
+        if self.input.trim().is_empty() {
+            self.input.clear();
             return;
         }
 
-        let line = self.input.clone();
         self.input.clear();
-
-        self.logs.push(format!(">> {}", line));
-
-        match self.child_stdin.as_mut() {
-            Some(stdin) => {
-                if writeln!(stdin, "{}", line).is_err() || stdin.flush().is_err() {
-                    self.logs.push("[ERR] failed to write to process stdin".to_string());
-                }
-            }
-            None => {
-                self.logs.push("[INFO] No running process to receive input.".to_string());
-            }
-        }
+        self.logs.push(
+            "[INFO] Input forwarding is disabled. Commands run in background mode.".to_string(),
+        );
 
         self.trim_logs();
     }
 
     fn pump_process(&mut self) {
-        if let Some(rx) = &self.rx {
-            while let Ok(event) = rx.try_recv() {
-                match event {
-                    ProcEvent::Stdout(chunk) => self.logs.extend(split_to_lines(chunk, false)),
-                    ProcEvent::Stderr(chunk) => self.logs.extend(split_to_lines(chunk, true)),
-                }
+        while let Ok(event) = self.rx.try_recv() {
+            match event {
+                ProcEvent::Stdout(chunk) => self.logs.extend(split_to_lines(chunk, false)),
+                ProcEvent::Stderr(chunk) => self.logs.extend(split_to_lines(chunk, true)),
             }
         }
 
-        if let Some(child) = &mut self.child {
-            match child.try_wait() {
-                Ok(Some(status)) => {
-                    self.logs
-                        .push(format!("[INFO] Process exited with status: {}", status));
-                    self.child = None;
-                    self.child_stdin = None;
-                    self.rx = None;
-                    self.focus = Focus::Dashboard;
+        let mut idx = 0;
+        while idx < self.running.len() {
+            let (remove_current, message) = {
+                let proc = &mut self.running[idx];
+                match proc.child.try_wait() {
+                    Ok(Some(status)) => (
+                        true,
+                        Some(format!(
+                            "[INFO] Process '{}' exited with status: {}",
+                            proc.label, status
+                        )),
+                    ),
+                    Ok(None) => (false, None),
+                    Err(err) => (
+                        true,
+                        Some(format!(
+                            "[ERROR] Failed checking process '{}' status: {}",
+                            proc.label, err
+                        )),
+                    ),
                 }
-                Ok(None) => {}
-                Err(err) => {
-                    self.logs
-                        .push(format!("[ERROR] Failed checking process status: {}", err));
-                    self.child = None;
-                    self.child_stdin = None;
-                    self.rx = None;
-                    self.focus = Focus::Dashboard;
-                }
+            };
+
+            if let Some(message) = message {
+                self.logs.push(message);
+            }
+
+            if remove_current {
+                self.running.remove(idx);
+            } else {
+                idx += 1;
             }
         }
 
@@ -416,12 +420,10 @@ impl AppState {
     }
 
     fn shutdown(&mut self) {
-        if let Some(child) = &mut self.child {
-            let _ = child.kill();
+        for proc in &mut self.running {
+            let _ = proc.child.kill();
         }
-        self.child = None;
-        self.child_stdin = None;
-        self.rx = None;
+        self.running.clear();
     }
 
     fn trim_logs(&mut self) {
@@ -476,7 +478,11 @@ fn extract_host_ports(line: &str) -> Vec<String> {
             let host_segment = mapped.rsplit(':').next().unwrap_or("").trim();
             let host_port = host_segment.split('/').next().unwrap_or("").trim();
 
-            if host_port.chars().all(|c| c.is_ascii_digit()) && !host_port.is_empty() {
+            if !host_port.is_empty()
+                && host_port
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || c == '-')
+            {
                 Some(host_port.to_string())
             } else {
                 None
@@ -487,7 +493,12 @@ fn extract_host_ports(line: &str) -> Vec<String> {
 
 fn menu_allowed_on_current_os(menu: MenuKind) -> bool {
     match menu {
-        MenuKind::RunWin11 | MenuKind::RunWin11InstallApps => cfg!(windows),
+        MenuKind::RunWin11
+        | MenuKind::RunWin11Internet
+        | MenuKind::RunWin11Dependencies
+        | MenuKind::RunWin11Github
+        | MenuKind::RunWin11Docker
+        | MenuKind::RunWin11Open => cfg!(windows),
         MenuKind::RunUbuntu22 => !cfg!(windows),
         MenuKind::Root => true,
     }
@@ -545,17 +556,61 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
         ],
         MenuKind::RunWin11 => vec![
             CommandItem {
+                label: "vn run win11-internet",
+                action: Action::OpenMenu(MenuKind::RunWin11Internet),
+            },
+            CommandItem {
+                label: "vn run win11-dependencies",
+                action: Action::OpenMenu(MenuKind::RunWin11Dependencies),
+            },
+            CommandItem {
+                label: "vn run win11-github",
+                action: Action::OpenMenu(MenuKind::RunWin11Github),
+            },
+            CommandItem {
+                label: "vn run win11-docker",
+                action: Action::OpenMenu(MenuKind::RunWin11Docker),
+            },
+            CommandItem {
+                label: "vn run win11-open",
+                action: Action::OpenMenu(MenuKind::RunWin11Open),
+            },
+            CommandItem {
+                label: "< Back to Dashboard",
+                action: Action::BackToRoot,
+            },
+        ],
+        MenuKind::RunWin11Internet => vec![
+            CommandItem {
                 label: "vn run win11-check-internet",
                 action: Action::Execute(vec!["run", "win11-check-internet"]),
             },
+            CommandItem {
+                label: "< Back to win11",
+                action: Action::OpenMenu(MenuKind::RunWin11),
+            },
+        ],
+        MenuKind::RunWin11Dependencies => vec![
             CommandItem {
                 label: "vn run win11-check-dependencies",
                 action: Action::Execute(vec!["run", "win11-check-dependencies"]),
             },
             CommandItem {
+                label: "< Back to win11",
+                action: Action::OpenMenu(MenuKind::RunWin11),
+            },
+        ],
+        MenuKind::RunWin11Github => vec![
+            CommandItem {
                 label: "vn run win11-download-all-repos",
                 action: Action::Execute(vec!["run", "win11-download-all-repos"]),
             },
+            CommandItem {
+                label: "< Back to win11",
+                action: Action::OpenMenu(MenuKind::RunWin11),
+            },
+        ],
+        MenuKind::RunWin11Docker => vec![
             CommandItem {
                 label: "vn run win11-open-docker",
                 action: Action::Execute(vec!["run", "win11-open-docker"]),
@@ -565,15 +620,19 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "win11-check-docker"]),
             },
             CommandItem {
-                label: "vn run win11-open-containers",
-                action: Action::OpenMenu(MenuKind::RunWin11InstallApps),
+                label: "vn run win11-remove-containers",
+                action: Action::Execute(vec!["run", "win11-remove-containers"]),
             },
             CommandItem {
-                label: "< Back to Dashboard",
-                action: Action::BackToRoot,
+                label: "vn run win11-remove-images",
+                action: Action::Execute(vec!["run", "win11-remove-images"]),
+            },
+            CommandItem {
+                label: "< Back to win11",
+                action: Action::OpenMenu(MenuKind::RunWin11),
             },
         ],
-        MenuKind::RunWin11InstallApps => vec![
+        MenuKind::RunWin11Open => vec![
             CommandItem {
                 label: "vn run win11-open-docs",
                 action: Action::Execute(vec!["run", "win11-open-docs"]),

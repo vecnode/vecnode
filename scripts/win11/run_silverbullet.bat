@@ -85,6 +85,10 @@ REM ---------------------------------------------------------------------------
 echo.
 set "BACKUP_CHOICE="
 set /p BACKUP_CHOICE="Do you want to backup the space folder elsewhere? (y/n): "
+if errorlevel 1 (
+    echo [INFO] Non-interactive mode detected. Defaulting backup choice to 'n'.
+    set "BACKUP_CHOICE=n"
+)
 
 if /i "%BACKUP_CHOICE%"=="y" goto :backup_destination
 if /i "%BACKUP_CHOICE%"=="yes" goto :backup_destination
@@ -134,9 +138,18 @@ REM ---------------------------------------------------------------------------
 echo.
 set "SYNC_CHOICE="
 set /p SYNC_CHOICE="Do you want to copy markdown files from another folder? (y/n): "
+if errorlevel 1 (
+    echo [INFO] Non-interactive mode detected. Defaulting copy choice to 'n'.
+    set "SYNC_CHOICE=n"
+)
 
 if /i "%SYNC_CHOICE%"=="y" goto :sync_source
+if /i "%SYNC_CHOICE%"=="yes" goto :sync_source
 if /i "%SYNC_CHOICE%"=="n" (
+    echo [INFO] Skipping copy.
+    goto :after_sync
+)
+if /i "%SYNC_CHOICE%"=="no" (
     echo [INFO] Skipping copy.
     goto :after_sync
 )
