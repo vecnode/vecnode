@@ -837,8 +837,6 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
             let header = Paragraph::new("vecnode vn")
                 .style(
                     Style::default()
-                        .fg(Color::Black)
-                        .bg(Color::Cyan)
                         .add_modifier(Modifier::BOLD),
                 )
                 .block(Block::default().borders(Borders::ALL).title("CLI"));

@@ -18,7 +18,9 @@ RUN apk add --no-cache \
 RUN python3 -m pip install --no-cache-dir \
     --break-system-packages \
     fastapi==0.115.6 \
-    "uvicorn[standard]==0.32.1"
+    "uvicorn[standard]==0.32.1" \
+    pillow==11.2.1 \
+    python-multipart==0.0.20
 
 # Set working directory
 WORKDIR /app
@@ -30,6 +32,7 @@ COPY . /app
 RUN sed -i 's/\r$//' /app/docker/media-processor/main.sh \
     /app/docker/media-processor/ui_server.py \
     /app/docker/media-processor/api_server.py && \
+    cp /app/assets/icons/black-square.svg /app/docker/media-processor/ui/favicon.svg && \
     chmod +x /app/docker/media-processor/main.sh && \
     chmod +x scripts/ubuntu22/*.sh
 

@@ -4,6 +4,8 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>vecnode media-processor</title>
+  <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+  <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
   <main>
@@ -21,26 +23,58 @@
     <div id="status"></div>
   </main>
 
-  <script>
-    const statusNode = document.getElementById("status");
-    const button = document.getElementById("check");
+  <hr class="section-divider" />
 
-    async function checkHealth() {
-      statusNode.textContent = "Checking API...";
-      try {
-        const response = await fetch("http://localhost:8086/health");
-        if (!response.ok) {
-          throw new Error("HTTP " + response.status);
-        }
-        const data = await response.json();
-        statusNode.textContent = "API is healthy at " + data.time;
-      } catch (error) {
-        statusNode.textContent = "API check failed: " + error.message;
-      }
-    }
+  <main class="simple-ui">
+    <div class="menu-bar" role="tablist" aria-label="Processor menu">
+      <button class="menu-btn active" id="tabPandoc" type="button" data-target="panelPandoc" role="tab" aria-selected="true">Pandoc Processor</button>
+      <button class="menu-btn" id="tabDownloader" type="button" data-target="panelDownloader" role="tab" aria-selected="false">Media Downloader</button>
+      <button class="menu-btn" id="tabImage" type="button" data-target="panelImage" role="tab" aria-selected="false">Image Processor</button>
+    </div>
 
-    button.addEventListener("click", checkHealth);
-    checkHealth();
-  </script>
+    <section id="panelPandoc" class="processor-panel active" role="tabpanel" aria-labelledby="tabPandoc">
+      <h2 class="simple-title">Pandoc Processor</h2>
+      <p class="simple-subtitle">lorem ipsum</p>
+      <button id="pandocVersionBtn" class="upload-btn" type="button">Get Pandoc Version</button>
+      <pre id="pandocVersionStatus" class="pandoc-status"></pre>
+    </section>
+
+    <section id="panelDownloader" class="processor-panel" role="tabpanel" aria-labelledby="tabDownloader">
+      <h2 class="simple-title">Media Downloader</h2>
+      <p class="simple-subtitle">lorem ipsum</p>
+    </section>
+
+    <section id="panelImage" class="processor-panel" role="tabpanel" aria-labelledby="tabImage">
+      <h2 class="simple-title">Image Processor</h2>
+      <p class="simple-subtitle">
+        Select an image file. The backend will return its metadata and a grayscale version.
+      </p>
+
+      <div class="upload-controls">
+        <input type="file" id="imageInput" accept="image/*" />
+        <button id="uploadBtn" class="upload-btn">Process</button>
+      </div>
+
+      <div id="uploadStatus" class="upload-status"></div>
+
+      <div id="results" class="results-panel">
+        <table id="metaTable" class="meta-table">
+          <tbody></tbody>
+        </table>
+        <div class="preview-wrap">
+          <div>
+            <p class="preview-label">original</p>
+            <img id="previewOriginal" class="preview-image" />
+          </div>
+          <div>
+            <p class="preview-label">grayscale (server)</p>
+            <img id="previewGray" class="preview-image" />
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="./main.js"></script>
 </body>
 </html>
