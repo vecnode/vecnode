@@ -32,9 +32,13 @@ struct ScriptTarget {
 
 fn map_script(name: &str) -> Result<ScriptTarget> {
     let key = name.to_ascii_lowercase();
+    let is_linux = cfg!(target_os = "linux");
     let target = match key.as_str() {
         "ubuntu22" => ScriptTarget {
             relative_path: "scripts/ubuntu22/main.sh",
+        },
+        "ubuntu22-check-local-network" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/check_local_network.sh",
         },
         "ubuntu22-check-internet" => ScriptTarget {
             relative_path: "scripts/ubuntu22/check_internet.sh",
@@ -42,11 +46,29 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "ubuntu22-check-dependencies" => ScriptTarget {
             relative_path: "scripts/ubuntu22/check_dependencies.sh",
         },
+        "ubuntu22-check-docker" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/check_docker.sh",
+        },
+        "ubuntu22-remove-containers" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/remove_containers.sh",
+        },
+        "ubuntu22-remove-images" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/remove_images.sh",
+        },
         "ubuntu22-download-all-repos" => ScriptTarget {
             relative_path: "scripts/ubuntu22/download_all_repos.sh",
         },
         "ubuntu22-download-all-orgs" => ScriptTarget {
             relative_path: "scripts/ubuntu22/download_all_orgs.sh",
+        },
+        "ubuntu22-open-docker" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/open_docker.sh",
+        },
+        "ubuntu22-open-docs" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/open_docs.sh",
+        },
+        "ubuntu22-open-media-processor" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/run_cli_container.sh",
         },
         "ubuntu22-run-cli-container" => ScriptTarget {
             relative_path: "scripts/ubuntu22/run_cli_container.sh",
@@ -54,11 +76,125 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "ubuntu22-run-silverbullet" => ScriptTarget {
             relative_path: "scripts/ubuntu22/run_silverbullet.sh",
         },
+        "ubuntu22-open-silverbullet" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/run_silverbullet.sh",
+        },
+        "ubuntu22-check-ollama" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/check_ollama.sh",
+        },
+        "ubuntu22-open-ollama" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/open_ollama.sh",
+        },
         "silverbullet" => ScriptTarget {
             relative_path: if cfg!(windows) {
                 "scripts/win11/run_silverbullet.bat"
             } else {
                 "scripts/ubuntu22/run_silverbullet.sh"
+            },
+        },
+        "check-internet" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/check_internet.sh"
+            } else {
+                "scripts/win11/check_internet.bat"
+            },
+        },
+        "check-dependencies" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/check_dependencies.sh"
+            } else {
+                "scripts/win11/check_dependencies.bat"
+            },
+        },
+        "check-local-network" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/check_local_network.sh"
+            } else {
+                "scripts/win11/check_local_network.bat"
+            },
+        },
+        "check-docker" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/check_docker.sh"
+            } else {
+                "scripts/win11/check_docker.bat"
+            },
+        },
+        "remove-containers" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/remove_containers.sh"
+            } else {
+                "scripts/win11/remove_containers.bat"
+            },
+        },
+        "remove-images" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/remove_images.sh"
+            } else {
+                "scripts/win11/remove_images.bat"
+            },
+        },
+        "open-docker" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/open_docker.sh"
+            } else {
+                "scripts/win11/open_docker.bat"
+            },
+        },
+        "open-docs" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/open_docs.sh"
+            } else {
+                "scripts/win11/open_docs.bat"
+            },
+        },
+        "open-media-processor" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/open_media_processor.sh"
+            } else {
+                "scripts/win11/open_media_processor.bat"
+            },
+        },
+        "download-all-repos" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/download_all_repos.sh"
+            } else {
+                "scripts/win11/download_all_repos.bat"
+            },
+        },
+        "download-all-orgs" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/download_all_orgs.sh"
+            } else {
+                "scripts/win11/download_all_orgs.bat"
+            },
+        },
+        "run-cli-container" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/run_cli_container.sh"
+            } else {
+                "scripts/win11/run_cli_container.bat"
+            },
+        },
+        "open-silverbullet" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/run_silverbullet.sh"
+            } else {
+                "scripts/win11/run_silverbullet.bat"
+            },
+        },
+        "check-ollama" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/check_ollama.sh"
+            } else {
+                "scripts/win11/check_ollama.bat"
+            },
+        },
+        "open-ollama" => ScriptTarget {
+            relative_path: if is_linux {
+                "scripts/ubuntu22/open_ollama.sh"
+            } else {
+                "scripts/win11/open_ollama.bat"
             },
         },
         "win11" => ScriptTarget {
@@ -113,7 +249,7 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
             relative_path: "scripts/tools-cli/alpine/main.sh",
         },
         _ => bail!(
-            "unknown script name '{}'. Supported: ubuntu22, ubuntu22-check-internet, ubuntu22-check-dependencies, ubuntu22-download-all-repos, ubuntu22-download-all-orgs, ubuntu22-run-cli-container, ubuntu22-run-silverbullet, win11, win11-check-internet, win11-check-local-network, win11-check-dependencies, win11-download-all-repos, win11-open-docker, win11-open-docs, win11-check-docker, win11-remove-containers, win11-remove-images, win11-download-all-orgs, win11-run-cli-container, win11-open-silverbullet, win11-open-media-processor, win11-check-ollama, win11-open-ollama, tools-alpine, silverbullet",
+            "unknown script name '{}'. Supported linux and win11 script names plus cross-platform aliases (e.g. check-internet, check-dependencies, open-docker, open-docs, open-media-processor, check-ollama, open-ollama, download-all-repos, download-all-orgs, run-cli-container, open-silverbullet)",
             name
         ),
     };

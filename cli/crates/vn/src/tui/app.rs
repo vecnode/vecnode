@@ -20,6 +20,12 @@ use std::time::Duration;
 enum MenuKind {
     Root,
     RunUbuntu22,
+    RunUbuntu22Network,
+    RunUbuntu22Dependencies,
+    RunUbuntu22Github,
+    RunUbuntu22Docker,
+    RunUbuntu22Open,
+    RunUbuntu22Ai,
     RunWin11,
     RunWin11Network,
     RunWin11Dependencies,
@@ -451,13 +457,44 @@ fn split_to_lines(chunk: String, is_stderr: bool) -> Vec<String> {
         }
 
         if is_stderr {
-            out.push(format!("[ERR] {}", part));
+            if is_non_error_stderr_line(part) {
+                out.push(part.to_string());
+            } else {
+                out.push(format!("[ERR] {}", part));
+            }
         } else {
             out.push(part.to_string());
         }
     }
 
     out
+}
+
+fn is_non_error_stderr_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return true;
+    }
+
+    // Docker BuildKit and CLI tools often print normal progress to stderr.
+    if trimmed.starts_with('#') {
+        return true;
+    }
+
+    let lower = trimmed.to_ascii_lowercase();
+    lower.starts_with("sending build context")
+        || lower.starts_with("step ")
+        || lower.starts_with(" --->")
+        || lower.starts_with("successfully built")
+        || lower.starts_with("successfully tagged")
+        || lower.starts_with("naming to ")
+        || lower.starts_with("exporting ")
+        || lower.starts_with("transferring ")
+        || lower.starts_with("unpacking ")
+        || lower.starts_with("load build definition")
+        || lower.starts_with("load metadata")
+        || lower.starts_with("load .dockerignore")
+        || lower.starts_with("build context")
 }
 
 fn extract_host_ports(line: &str) -> Vec<String> {
@@ -487,6 +524,13 @@ fn extract_host_ports(line: &str) -> Vec<String> {
 
 fn menu_allowed_on_current_os(menu: MenuKind) -> bool {
     match menu {
+        MenuKind::RunUbuntu22
+        | MenuKind::RunUbuntu22Network
+        | MenuKind::RunUbuntu22Dependencies
+        | MenuKind::RunUbuntu22Github
+        | MenuKind::RunUbuntu22Docker
+        | MenuKind::RunUbuntu22Open
+        | MenuKind::RunUbuntu22Ai => !cfg!(windows),
         MenuKind::RunWin11
         | MenuKind::RunWin11Network
         | MenuKind::RunWin11Dependencies
@@ -494,7 +538,6 @@ fn menu_allowed_on_current_os(menu: MenuKind) -> bool {
         | MenuKind::RunWin11Docker
         | MenuKind::RunWin11Open
         | MenuKind::RunWin11Ai => cfg!(windows),
-        MenuKind::RunUbuntu22 => !cfg!(windows),
         MenuKind::Root => true,
     }
 }
@@ -517,13 +560,59 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
         ],
         MenuKind::RunUbuntu22 => vec![
             CommandItem {
+                label: "vn run ubuntu22-ai",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22Ai),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-network",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22Network),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-dependencies",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22Dependencies),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-github",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22Github),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-docker",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22Docker),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-open",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22Open),
+            },
+            CommandItem {
+                label: "< Back to Dashboard",
+                action: Action::BackToRoot,
+            },
+        ],
+        MenuKind::RunUbuntu22Network => vec![
+            CommandItem {
+                label: "vn run ubuntu22-check-local-network",
+                action: Action::Execute(vec!["run", "ubuntu22-check-local-network"]),
+            },
+            CommandItem {
                 label: "vn run ubuntu22-check-internet",
                 action: Action::Execute(vec!["run", "ubuntu22-check-internet"]),
             },
             CommandItem {
+                label: "< Back to ubuntu22",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22),
+            },
+        ],
+        MenuKind::RunUbuntu22Dependencies => vec![
+            CommandItem {
                 label: "vn run ubuntu22-check-dependencies",
                 action: Action::Execute(vec!["run", "ubuntu22-check-dependencies"]),
             },
+            CommandItem {
+                label: "< Back to ubuntu22",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22),
+            },
+        ],
+        MenuKind::RunUbuntu22Github => vec![
             CommandItem {
                 label: "vn run ubuntu22-download-all-repos",
                 action: Action::Execute(vec!["run", "ubuntu22-download-all-repos"]),
@@ -533,16 +622,62 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "ubuntu22-download-all-orgs"]),
             },
             CommandItem {
-                label: "vn run ubuntu22-run-cli-container",
-                action: Action::Execute(vec!["run", "ubuntu22-run-cli-container"]),
+                label: "< Back to ubuntu22",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22),
+            },
+        ],
+        MenuKind::RunUbuntu22Docker => vec![
+            CommandItem {
+                label: "vn run ubuntu22-open-docker",
+                action: Action::Execute(vec!["run", "ubuntu22-open-docker"]),
             },
             CommandItem {
-                label: "vn run ubuntu22-run-silverbullet",
-                action: Action::Execute(vec!["run", "ubuntu22-run-silverbullet"]),
+                label: "vn run ubuntu22-check-docker",
+                action: Action::Execute(vec!["run", "ubuntu22-check-docker"]),
             },
             CommandItem {
-                label: "< Back to Dashboard",
-                action: Action::BackToRoot,
+                label: "vn run ubuntu22-remove-containers",
+                action: Action::Execute(vec!["run", "ubuntu22-remove-containers"]),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-remove-images",
+                action: Action::Execute(vec!["run", "ubuntu22-remove-images"]),
+            },
+            CommandItem {
+                label: "< Back to ubuntu22",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22),
+            },
+        ],
+        MenuKind::RunUbuntu22Open => vec![
+            CommandItem {
+                label: "vn run ubuntu22-open-docs",
+                action: Action::Execute(vec!["run", "ubuntu22-open-docs"]),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-open-silverbullet",
+                action: Action::Execute(vec!["run", "ubuntu22-open-silverbullet"]),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-open-media-processor",
+                action: Action::Execute(vec!["run", "ubuntu22-open-media-processor"]),
+            },
+            CommandItem {
+                label: "< Back to ubuntu22",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22),
+            },
+        ],
+        MenuKind::RunUbuntu22Ai => vec![
+            CommandItem {
+                label: "vn run ubuntu22-check-ollama",
+                action: Action::Execute(vec!["run", "ubuntu22-check-ollama"]),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-open-ollama",
+                action: Action::Execute(vec!["run", "ubuntu22-open-ollama"]),
+            },
+            CommandItem {
+                label: "< Back to ubuntu22",
+                action: Action::OpenMenu(MenuKind::RunUbuntu22),
             },
         ],
         MenuKind::RunWin11 => vec![
