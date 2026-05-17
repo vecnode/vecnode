@@ -245,6 +245,9 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "win11-open-ollama" => ScriptTarget {
             relative_path: "scripts/win11/open_ollama.bat",
         },
+        "win11-setup-dotfiles" => ScriptTarget {
+            relative_path: "dotfiles/win11/setup_dotfiles.bat",
+        },
         "tools-alpine" => ScriptTarget {
             relative_path: "scripts/tools-cli/alpine/main.sh",
         },

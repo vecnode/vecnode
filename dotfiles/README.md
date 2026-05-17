@@ -1,1 +1,1 @@
-Preliminary cross-platform dotfiles folder
+Preliminary dotfiles folder

@@ -33,6 +33,7 @@ enum MenuKind {
     RunWin11Docker,
     RunWin11Open,
     RunWin11Ai,
+    RunWin11Dotfiles,
 }
 
 #[derive(Clone)]
@@ -537,7 +538,8 @@ fn menu_allowed_on_current_os(menu: MenuKind) -> bool {
         | MenuKind::RunWin11Github
         | MenuKind::RunWin11Docker
         | MenuKind::RunWin11Open
-        | MenuKind::RunWin11Ai => cfg!(windows),
+        | MenuKind::RunWin11Ai
+        | MenuKind::RunWin11Dotfiles => cfg!(windows),
         MenuKind::Root => true,
     }
 }
@@ -686,6 +688,10 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::OpenMenu(MenuKind::RunWin11Ai),
             },
             CommandItem {
+                label: "vn run win11-dotfiles",
+                action: Action::OpenMenu(MenuKind::RunWin11Dotfiles),
+            },
+            CommandItem {
                 label: "vn run win11-network",
                 action: Action::OpenMenu(MenuKind::RunWin11Network),
             },
@@ -792,6 +798,16 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
             CommandItem {
                 label: "vn run win11-open-ollama",
                 action: Action::Execute(vec!["run", "win11-open-ollama"]),
+            },
+            CommandItem {
+                label: "< Back to win11",
+                action: Action::OpenMenu(MenuKind::RunWin11),
+            },
+        ],
+        MenuKind::RunWin11Dotfiles => vec![
+            CommandItem {
+                label: "vn run win11-setup-dotfiles",
+                action: Action::Execute(vec!["run", "win11-setup-dotfiles"]),
             },
             CommandItem {
                 label: "< Back to win11",
