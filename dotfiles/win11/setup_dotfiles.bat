@@ -30,5 +30,21 @@ if exist "%SSH_CONFIG_SOURCE%" (
     echo [WARNING] SSH config source not found: %SSH_CONFIG_SOURCE%
 )
 
+REM ---------------------------------------------------------------------------
+REM Run global_configs.ps1
+REM ---------------------------------------------------------------------------
+set "GLOBAL_CONFIGS=%DOTFILES_SOURCE%global_configs.ps1"
+
+if exist "%GLOBAL_CONFIGS%" (
+    echo [INFO] Running global_configs.ps1...
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%GLOBAL_CONFIGS%"
+    if errorlevel 1 (
+        echo [ERROR] global_configs.ps1 exited with an error.
+        exit /b 1
+    )
+) else (
+    echo [WARNING] global_configs.ps1 not found: %GLOBAL_CONFIGS%
+)
+
 echo [INFO] Dotfiles setup complete.
 exit /b 0
