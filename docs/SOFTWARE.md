@@ -13,31 +13,104 @@ These are the root buttons shown when `vn` starts:
 
 ## Ubuntu 22 Menu
 
-When running on non-Windows hosts, the Ubuntu menu exposes:
+When running on non-Windows hosts, `vn run ubuntu22` opens grouped submenus:
 
+- `vn run ubuntu22-ai`
+- `vn run ubuntu22-network`
+- `vn run ubuntu22-dependencies`
+- `vn run ubuntu22-github`
+- `vn run ubuntu22-docker`
+- `vn run ubuntu22-open`
+- `< Back to Dashboard`
+
+### Ubuntu 22 AI
+
+- `vn run ubuntu22-check-ollama`
+- `vn run ubuntu22-open-ollama`
+- `< Back to ubuntu22`
+
+### Ubuntu 22 Network
+
+- `vn run ubuntu22-check-local-network`
 - `vn run ubuntu22-check-internet`
+- `< Back to ubuntu22`
+
+### Ubuntu 22 Dependencies
+
 - `vn run ubuntu22-check-dependencies`
+- `< Back to ubuntu22`
+
+### Ubuntu 22 GitHub
+
 - `vn run ubuntu22-download-all-repos`
 - `vn run ubuntu22-download-all-orgs`
-- `vn run ubuntu22-run-cli-container`
-- `vn run ubuntu22-run-silverbullet`
-- `< Back to Dashboard`
+- `< Back to ubuntu22`
+
+### Ubuntu 22 Docker
+
+- `vn run ubuntu22-open-docker`
+- `vn run ubuntu22-check-docker`
+- `vn run ubuntu22-remove-containers`
+- `vn run ubuntu22-remove-images`
+- `< Back to ubuntu22`
+
+### Ubuntu 22 Open
+
+- `vn run ubuntu22-open-docs`
+- `vn run ubuntu22-open-silverbullet`
+- `vn run ubuntu22-open-media-processor`
+- `< Back to ubuntu22`
 
 ## Windows 11 Menu
 
-When running on Windows hosts, the Windows menu exposes:
+When running on Windows hosts, `vn run win11` opens grouped submenus:
 
-- `vn run win11-check-internet`
-- `vn run win11-check-dependencies`
-- `vn run win11-download-all-repos`
-- `vn run win11-open-docker`
-- `vn run win11-check-docker`
-- `vn run win11-open-containers`
+- `vn run win11-ai`
+- `vn run win11-dotfiles`
+- `vn run win11-network`
+- `vn run win11-dependencies`
+- `vn run win11-github`
+- `vn run win11-docker`
+- `vn run win11-open`
 - `< Back to Dashboard`
 
-## Windows 11 Apps Submenu
+### Windows 11 AI
 
-The apps submenu currently includes:
+- `vn run win11-check-ollama`
+- `vn run win11-open-ollama`
+- `< Back to win11`
+
+### Windows 11 Dotfiles
+
+- `vn run win11-setup-dotfiles`
+- `< Back to win11`
+
+### Windows 11 Network
+
+- `vn run win11-check-peripherals`
+- `vn run win11-check-local-network`
+- `vn run win11-check-internet`
+- `< Back to win11`
+
+### Windows 11 Dependencies
+
+- `vn run win11-check-dependencies`
+- `< Back to win11`
+
+### Windows 11 GitHub
+
+- `vn run win11-download-all-repos`
+- `< Back to win11`
+
+### Windows 11 Docker
+
+- `vn run win11-open-docker`
+- `vn run win11-check-docker`
+- `vn run win11-remove-containers`
+- `vn run win11-remove-images`
+- `< Back to win11`
+
+### Windows 11 Open
 
 - `vn run win11-open-docs`
 - `vn run win11-open-silverbullet`

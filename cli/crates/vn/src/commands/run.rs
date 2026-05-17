@@ -200,6 +200,9 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "win11" => ScriptTarget {
             relative_path: "scripts/win11/main.bat",
         },
+        "win11-check-peripherals" => ScriptTarget {
+            relative_path: "scripts/win11/check_peripherals.bat",
+        },
         "win11-check-internet" => ScriptTarget {
             relative_path: "scripts/win11/check_internet.bat",
         },

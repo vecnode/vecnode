@@ -5,6 +5,16 @@ REM ---------------------------------------------------------------------------
 REM setup_dotfiles.bat - Copy dotfiles to Windows 11 user profile
 REM ---------------------------------------------------------------------------
 
+REM Elevate to Administrator if not already running as admin.
+REM Re-launches this exact script with the same working directory via UAC.
+net session >nul 2>nul
+if errorlevel 1 (
+    echo [INFO] Requesting Administrator rights...
+    powershell -NoProfile -ExecutionPolicy Bypass -Command "Start-Process cmd -ArgumentList '/C \"%~f0\"' -Verb RunAs -Wait"
+    exit /b 0
+)
+
+echo [INFO] Running as Administrator.
 set "DOTFILES_SOURCE=%~dp0"
 set "SSH_CONFIG_SOURCE=%DOTFILES_SOURCE%ssh\config"
 set "SSH_CONFIG_DEST=%USERPROFILE%\.ssh\config"

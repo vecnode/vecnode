@@ -718,6 +718,10 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
         ],
         MenuKind::RunWin11Network => vec![
             CommandItem {
+                label: "vn run win11-check-peripherals",
+                action: Action::Execute(vec!["run", "win11-check-peripherals"]),
+            },
+            CommandItem {
                 label: "vn run win11-check-local-network",
                 action: Action::Execute(vec!["run", "win11-check-local-network"]),
             },
