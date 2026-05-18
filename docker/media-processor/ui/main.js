@@ -235,6 +235,7 @@ for (const btn of menuButtons) {
 const pandocVersionBtn = document.getElementById("pandocVersionBtn");
 const pandocVersionStatus = document.getElementById("pandocVersionStatus");
 const pandocMdToPdfBtn = document.getElementById("pandocMdToPdfBtn");
+const pandocMdToPdf2Btn = document.getElementById("pandocMdToPdf2Btn");
 const pandocConvertStatus = document.getElementById("pandocConvertStatus");
 
 function formatSeconds(value) {
@@ -254,6 +255,20 @@ pandocVersionBtn.addEventListener("click", async () => {
 });
 
 pandocMdToPdfBtn.addEventListener("click", async () => {
+  await runMarkdownToPdfConversion({
+    endpoint: "http://localhost:8086/pandoc/markdown-to-pdf",
+    modeLabel: "LaTeX-style",
+  });
+});
+
+pandocMdToPdf2Btn.addEventListener("click", async () => {
+  await runMarkdownToPdfConversion({
+    endpoint: "http://localhost:8086/pandoc/markdown-to-pdf-viewer",
+    modeLabel: "Viewer-style",
+  });
+});
+
+async function runMarkdownToPdfConversion({ endpoint, modeLabel }) {
   const markdownEntries = Array.from(collectedFileMap.entries()).filter(([pathValue]) =>
     isMarkdownPath(pathValue)
   );
@@ -263,7 +278,9 @@ pandocMdToPdfBtn.addEventListener("click", async () => {
     return;
   }
 
-  pandocConvertStatus.textContent = `Preparing ${markdownEntries.length} Markdown file(s)...`;
+  pandocConvertStatus.textContent =
+    `Preparing ${markdownEntries.length} Markdown file(s)...\n` +
+    `Mode: ${modeLabel}`;
 
   const form = new FormData();
   for (const [pathValue, file] of markdownEntries) {
@@ -271,18 +288,21 @@ pandocMdToPdfBtn.addEventListener("click", async () => {
     form.append("paths", pathValue);
   }
 
-  pandocConvertStatus.textContent = `Uploading ${markdownEntries.length} Markdown file(s) to API...`;
+  pandocConvertStatus.textContent =
+    `Uploading ${markdownEntries.length} Markdown file(s) to API...\n` +
+    `Mode: ${modeLabel}`;
 
   const requestStartedAt = performance.now();
   const progressTimer = window.setInterval(() => {
     const elapsed = (performance.now() - requestStartedAt) / 1000;
     pandocConvertStatus.textContent =
       `Converting ${markdownEntries.length} Markdown file(s)...\n` +
+      `Mode: ${modeLabel}\n` +
       `Elapsed: ${formatSeconds(elapsed)}`;
   }, 700);
 
   try {
-    const res = await fetch("http://localhost:8086/pandoc/markdown-to-pdf", {
+    const res = await fetch(endpoint, {
       method: "POST",
       body: form,
     });
@@ -293,6 +313,7 @@ pandocMdToPdfBtn.addEventListener("click", async () => {
 
     const data = await res.json();
     const lines = [
+      `Mode: ${modeLabel}`,
       `Output folder: ${data.output_folder}`,
       `Converted: ${data.converted_count}`,
       `Engine: ${data.engine || "pandoc"}`,
@@ -313,7 +334,7 @@ pandocMdToPdfBtn.addEventListener("click", async () => {
   } finally {
     window.clearInterval(progressTimer);
   }
-});
+}
 
 // --- image upload (new) ---
 const imageInput = document.getElementById("imageInput");

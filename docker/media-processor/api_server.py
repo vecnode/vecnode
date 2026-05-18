@@ -55,6 +55,22 @@ async def pandoc_markdown_to_pdf(
     files: list[UploadFile] = File(...),
     paths: list[str] = Form(default=[]),
 ) -> dict[str, object]:
+    return await convert_markdown_to_pdf(files=files, paths=paths, mode="latex")
+
+
+@app.post("/pandoc/markdown-to-pdf-viewer")
+async def pandoc_markdown_to_pdf_viewer(
+    files: list[UploadFile] = File(...),
+    paths: list[str] = Form(default=[]),
+) -> dict[str, object]:
+    return await convert_markdown_to_pdf(files=files, paths=paths, mode="viewer")
+
+
+async def convert_markdown_to_pdf(
+    files: list[UploadFile],
+    paths: list[str],
+    mode: str,
+) -> dict[str, object]:
     if not files:
         raise HTTPException(status_code=400, detail="No files received.")
 
@@ -90,17 +106,7 @@ async def pandoc_markdown_to_pdf(
             output_pdf.parent.mkdir(parents=True, exist_ok=True)
 
             try:
-                subprocess.check_output(
-                    [
-                        "pandoc",
-                        str(input_path),
-                        "--pdf-engine=tectonic",
-                        "-o",
-                        str(output_pdf),
-                    ],
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                )
+                run_markdown_pdf_command(input_path=input_path, output_pdf=output_pdf, mode=mode)
             except subprocess.CalledProcessError as exc:
                 output_text = (exc.output or "").strip() or str(exc)
                 raise HTTPException(
@@ -122,7 +128,7 @@ async def pandoc_markdown_to_pdf(
         "converted_count": len(converted_files),
         "output_folder": str(output_dir),
         "converted_files": converted_files,
-        "engine": "tectonic",
+        "engine": "xelatex",
         "duration_seconds": round(time.perf_counter() - started_at, 2),
         "note": output_note,
     }
@@ -203,4 +209,46 @@ def get_output_base_dir() -> tuple[Path, str]:
     return (
         fallback,
         "HOST_DESKTOP_DIR is not set; saved to /outputs inside container/runtime.",
+    )
+
+
+def run_markdown_pdf_command(input_path: Path, output_pdf: Path, mode: str) -> None:
+    if mode == "viewer":
+        subprocess.check_output(
+            [
+                "pandoc",
+                str(input_path),
+                "--from=gfm",
+                "--pdf-engine=xelatex",
+                "-V",
+                "mainfont=Latin Modern Sans",
+                "-V",
+                "sansfont=Latin Modern Sans",
+                "-V",
+                "fontsize=11pt",
+                "-V",
+                "geometry:margin=1in",
+                "-V",
+                "colorlinks=true",
+                "-V",
+                "urlcolor=blue",
+                "--highlight-style=tango",
+                "-o",
+                str(output_pdf),
+            ],
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        return
+
+    subprocess.check_output(
+        [
+            "pandoc",
+            str(input_path),
+            "--pdf-engine=xelatex",
+            "-o",
+            str(output_pdf),
+        ],
+        stderr=subprocess.STDOUT,
+        text=True,
     )

@@ -5,6 +5,7 @@ Professional media-processor container with:
 - Web UI on port 8085
 - API on port 8086
 - Health endpoint at /health
+- Debian 12 slim base image
 
 ## Start from vn (Windows)
 

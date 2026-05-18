@@ -1,19 +1,23 @@
-# Alpine Linux
-FROM alpine:3.19
+# Debian 12 slim
+FROM debian:12-slim
 
 # Install required dependencies
-RUN apk add --no-cache \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     jq \
     bash \
     ca-certificates \
     pandoc \
-    tectonic \
+    lmodern \
+    texlive-latex-recommended \
+    texlive-fonts-recommended \
+    texlive-xetex \
     python3 \
-    py3-pip \
+    python3-pip \
     yt-dlp \
-    ffmpeg
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Python web dependencies
 RUN python3 -m pip install --no-cache-dir \
