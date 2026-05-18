@@ -21,7 +21,25 @@ From repository root:
 ```bash
 docker build -t vecnode-media-processor:latest -f docker/media-processor/Dockerfile .
 docker rm -f vecnode-media-processor 2>/dev/null || true
-docker run -d --rm --name vecnode-media-processor -p 8085:8085 -p 8086:8086 vecnode-media-processor:latest
+docker run -d --rm --name vecnode-media-processor \
+	-p 8085:8085 \
+	-p 8086:8086 \
+	-e HOST_DESKTOP_DIR=/host/Desktop \
+	-v "$HOME/Desktop:/host/Desktop" \
+	vecnode-media-processor:latest
+```
+
+On Windows PowerShell, use:
+
+```powershell
+docker build -t vecnode-media-processor:latest -f docker/media-processor/Dockerfile .
+docker rm -f vecnode-media-processor 2>$null
+docker run -d --rm --name vecnode-media-processor `
+	-p 8085:8085 `
+	-p 8086:8086 `
+	-e HOST_DESKTOP_DIR=/host/Desktop `
+	-v "${env:USERPROFILE}\Desktop:/host/Desktop" `
+	vecnode-media-processor:latest
 ```
 
 ## URLs

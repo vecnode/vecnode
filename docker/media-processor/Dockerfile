@@ -9,6 +9,7 @@ RUN apk add --no-cache \
     bash \
     ca-certificates \
     pandoc \
+    tectonic \
     python3 \
     py3-pip \
     yt-dlp \

@@ -17,6 +17,194 @@ async function checkHealth() {
 button.addEventListener("click", checkHealth);
 checkHealth();
 
+// --- right panel drop zone (new) ---
+const dropZone = document.getElementById("dropZone");
+const pathListNode = document.getElementById("pathList");
+const pickFilesBtn = document.getElementById("pickFilesBtn");
+const pickFolderBtn = document.getElementById("pickFolderBtn");
+const clearPathsBtn = document.getElementById("clearPathsBtn");
+const pickFilesInput = document.getElementById("pickFilesInput");
+const pickFolderInput = document.getElementById("pickFolderInput");
+
+const collectedPathSet = new Set();
+const collectedFileMap = new Map();
+
+function isMarkdownPath(pathValue) {
+  return /\.(md|markdown)$/i.test(String(pathValue || ""));
+}
+
+function normalizePath(pathValue) {
+  return String(pathValue || "")
+    .replace(/\\\\/g, "/")
+    .replace(/^\/+/, "")
+    .trim();
+}
+
+function addPath(pathValue) {
+  const normalized = normalizePath(pathValue);
+  if (!normalized) return;
+  collectedPathSet.add(normalized);
+}
+
+function addCollectedFile(pathValue, file) {
+  const normalized = normalizePath(pathValue);
+  if (!normalized || !file) return;
+  collectedFileMap.set(normalized, file);
+  addPath(normalized);
+}
+
+function renderPathList(message) {
+  if (message) {
+    pathListNode.textContent = message;
+    return;
+  }
+
+  const values = Array.from(collectedPathSet).sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" })
+  );
+  pathListNode.textContent = values.length
+    ? values.join("\n")
+    : "No files selected yet.";
+}
+
+function addFilesFromList(fileList) {
+  for (const file of Array.from(fileList || [])) {
+    const pathValue = file.webkitRelativePath || file.name;
+    addCollectedFile(pathValue, file);
+  }
+  renderPathList();
+}
+
+function walkFileSystemEntry(entry, basePath = "") {
+  return new Promise((resolve) => {
+    if (!entry) {
+      resolve();
+      return;
+    }
+
+    const safeName = normalizePath(entry.name || "");
+    const nextBase = basePath ? `${basePath}/${safeName}` : safeName;
+
+    if (entry.isFile) {
+      entry.file(
+        (file) => {
+          addCollectedFile(nextBase, file);
+          resolve();
+        },
+        () => {
+          resolve();
+        }
+      );
+      return;
+    }
+
+    if (entry.isDirectory) {
+      const reader = entry.createReader();
+      const readBatch = () => {
+        reader.readEntries(async (entries) => {
+          if (!entries.length) {
+            resolve();
+            return;
+          }
+          for (const child of entries) {
+            await walkFileSystemEntry(child, nextBase);
+          }
+          readBatch();
+        }, resolve);
+      };
+      readBatch();
+      return;
+    }
+
+    resolve();
+  });
+}
+
+async function handleDrop(event) {
+  event.preventDefault();
+  dropZone.classList.remove("active");
+
+  const dt = event.dataTransfer;
+  if (!dt) {
+    renderPathList("Drop failed: no data transfer.");
+    return;
+  }
+
+  const items = Array.from(dt.items || []);
+  const supportsEntries = items.some((item) => typeof item.webkitGetAsEntry === "function");
+
+  if (supportsEntries) {
+    for (const item of items) {
+      const entry = typeof item.webkitGetAsEntry === "function" ? item.webkitGetAsEntry() : null;
+      if (entry) {
+        await walkFileSystemEntry(entry);
+      }
+    }
+    renderPathList();
+    return;
+  }
+
+  // Fallback when directory entries are not available in the browser.
+  addFilesFromList(dt.files);
+}
+
+function setDropZoneActive(isActive) {
+  dropZone.classList.toggle("active", isActive);
+}
+
+dropZone.addEventListener("dragenter", (event) => {
+  event.preventDefault();
+  setDropZoneActive(true);
+});
+
+dropZone.addEventListener("dragover", (event) => {
+  event.preventDefault();
+  setDropZoneActive(true);
+});
+
+dropZone.addEventListener("dragleave", (event) => {
+  if (!dropZone.contains(event.relatedTarget)) {
+    setDropZoneActive(false);
+  }
+});
+
+dropZone.addEventListener("drop", handleDrop);
+
+dropZone.addEventListener("click", () => {
+  pickFilesInput.click();
+});
+
+dropZone.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    pickFilesInput.click();
+  }
+});
+
+pickFilesBtn.addEventListener("click", () => {
+  pickFilesInput.click();
+});
+
+pickFolderBtn.addEventListener("click", () => {
+  pickFolderInput.click();
+});
+
+clearPathsBtn.addEventListener("click", () => {
+  collectedPathSet.clear();
+  collectedFileMap.clear();
+  renderPathList();
+});
+
+pickFilesInput.addEventListener("change", () => {
+  addFilesFromList(pickFilesInput.files);
+  pickFilesInput.value = "";
+});
+
+pickFolderInput.addEventListener("change", () => {
+  addFilesFromList(pickFolderInput.files);
+  pickFolderInput.value = "";
+});
+
 // --- top menu tab switching ---
 const menuButtons = document.querySelectorAll(".menu-btn");
 const processorPanels = document.querySelectorAll(".processor-panel");
@@ -46,6 +234,12 @@ for (const btn of menuButtons) {
 // --- pandoc processor (new) ---
 const pandocVersionBtn = document.getElementById("pandocVersionBtn");
 const pandocVersionStatus = document.getElementById("pandocVersionStatus");
+const pandocMdToPdfBtn = document.getElementById("pandocMdToPdfBtn");
+const pandocConvertStatus = document.getElementById("pandocConvertStatus");
+
+function formatSeconds(value) {
+  return `${Math.max(0, value).toFixed(1)}s`;
+}
 
 pandocVersionBtn.addEventListener("click", async () => {
   pandocVersionStatus.textContent = "Loading pandoc version...";
@@ -56,6 +250,68 @@ pandocVersionBtn.addEventListener("click", async () => {
     pandocVersionStatus.textContent = data.version || "unavailable";
   } catch (error) {
     pandocVersionStatus.textContent = "Error: " + error.message;
+  }
+});
+
+pandocMdToPdfBtn.addEventListener("click", async () => {
+  const markdownEntries = Array.from(collectedFileMap.entries()).filter(([pathValue]) =>
+    isMarkdownPath(pathValue)
+  );
+
+  if (!markdownEntries.length) {
+    pandocConvertStatus.textContent = "No Markdown files found in the current paths.";
+    return;
+  }
+
+  pandocConvertStatus.textContent = `Preparing ${markdownEntries.length} Markdown file(s)...`;
+
+  const form = new FormData();
+  for (const [pathValue, file] of markdownEntries) {
+    form.append("files", file, pathValue);
+    form.append("paths", pathValue);
+  }
+
+  pandocConvertStatus.textContent = `Uploading ${markdownEntries.length} Markdown file(s) to API...`;
+
+  const requestStartedAt = performance.now();
+  const progressTimer = window.setInterval(() => {
+    const elapsed = (performance.now() - requestStartedAt) / 1000;
+    pandocConvertStatus.textContent =
+      `Converting ${markdownEntries.length} Markdown file(s)...\n` +
+      `Elapsed: ${formatSeconds(elapsed)}`;
+  }, 700);
+
+  try {
+    const res = await fetch("http://localhost:8086/pandoc/markdown-to-pdf", {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+
+    const data = await res.json();
+    const lines = [
+      `Output folder: ${data.output_folder}`,
+      `Converted: ${data.converted_count}`,
+      `Engine: ${data.engine || "pandoc"}`,
+      `Time: ${formatSeconds(Number(data.duration_seconds || 0))}`,
+    ];
+
+    if (Array.isArray(data.converted_files) && data.converted_files.length) {
+      lines.push("", "PDF files:", ...data.converted_files);
+    }
+
+    if (data.note) {
+      lines.push("", `Note: ${data.note}`);
+    }
+
+    pandocConvertStatus.textContent = lines.join("\n");
+  } catch (error) {
+    pandocConvertStatus.textContent = "Error: " + error.message;
+  } finally {
+    window.clearInterval(progressTimer);
   }
 });
 

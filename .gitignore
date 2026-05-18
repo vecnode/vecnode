@@ -1,2 +1,5 @@
 backup/
 cli/target/
+__pycache__/
+*.log
+*.tmp

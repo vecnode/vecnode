@@ -8,19 +8,40 @@
   <link rel="stylesheet" href="./styles.css" />
 </head>
 <body>
-  <main>
-    <h1>vecnode media-processor</h1>
-    <p>Container is running with a web UI and processing API.</p>
+  <main class="top-layout">
+    <section class="top-box top-box-left">
+      <h1>media processor</h1>
+      <p>Simple local UI and API.</p>
 
-    <section>
-      <p><strong>UI:</strong> <code>http://localhost:8085</code></p>
-      <p><strong>API:</strong> <code>http://localhost:8086</code></p>
-      <p><strong>Health:</strong> <code>GET /health</code></p>
-      <p><strong>Process:</strong> <code>POST /process</code></p>
+      <section>
+        <p><strong>UI:</strong> <code>http://localhost:8085</code></p>
+        <p><strong>API:</strong> <code>http://localhost:8086</code></p>
+      </section>
+
+      <button id="check">Check API Health</button>
+      <div id="status"></div>
     </section>
 
-    <button id="check">Check API Health</button>
-    <div id="status"></div>
+    <section class="top-box top-box-right" aria-label="Drop zone panel">
+      <h2>Path Drop Zone</h2>
+      <p>Drop files or folders here. Paths below are ready to send to the API.</p>
+
+      <div id="dropZone" class="drop-zone" role="button" tabindex="0" aria-label="Drop files and folders">
+        Drop files or folders here
+      </div>
+
+      <div class="drop-actions">
+        <button id="pickFilesBtn" type="button">Choose Files</button>
+        <button id="pickFolderBtn" type="button">Choose Folder</button>
+        <button id="clearPathsBtn" type="button">Clear</button>
+      </div>
+
+      <input id="pickFilesInput" type="file" multiple hidden />
+      <input id="pickFolderInput" type="file" webkitdirectory directory multiple hidden />
+
+      <p class="paths-title">Current paths</p>
+      <pre id="pathList" class="paths-output">No files selected yet.</pre>
+    </section>
   </main>
 
   <hr class="section-divider" />
@@ -35,8 +56,12 @@
     <section id="panelPandoc" class="processor-panel active" role="tabpanel" aria-labelledby="tabPandoc">
       <h2 class="simple-title">Pandoc Processor</h2>
       <p class="simple-subtitle">lorem ipsum</p>
-      <button id="pandocVersionBtn" class="upload-btn" type="button">Get Pandoc Version</button>
+      <div class="pandoc-actions">
+        <button id="pandocVersionBtn" type="button">Get Pandoc Version</button>
+        <button id="pandocMdToPdfBtn" type="button">Markdown to PDF</button>
+      </div>
       <pre id="pandocVersionStatus" class="pandoc-status"></pre>
+      <pre id="pandocConvertStatus" class="pandoc-status"></pre>
     </section>
 
     <section id="panelDownloader" class="processor-panel" role="tabpanel" aria-labelledby="tabDownloader">

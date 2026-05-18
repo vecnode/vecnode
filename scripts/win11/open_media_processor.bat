@@ -13,12 +13,15 @@ set "IMAGE_NAME=vecnode-media-processor:latest"
 set "CONTAINER_NAME=vecnode-media-processor"
 set "UI_PORT=8085"
 set "API_PORT=8086"
+set "HOST_DESKTOP_WIN=%USERPROFILE%\Desktop"
+set "HOST_DESKTOP_CONTAINER=/host/Desktop"
 
 cls
 echo [INFO] Repository root: %REPO_ROOT%
 echo [INFO] Dockerfile: %DOCKERFILE_PATH%
 echo [INFO] Image: %IMAGE_NAME%
 echo [INFO] Container: %CONTAINER_NAME%
+echo [INFO] Host Desktop: %HOST_DESKTOP_WIN%
 echo.
 
 where docker >nul 2>nul
@@ -39,6 +42,15 @@ if not exist "%DOCKERFILE_PATH%" (
 	exit /b 1
 )
 
+if not exist "%HOST_DESKTOP_WIN%" (
+	echo [INFO] Creating Desktop folder: %HOST_DESKTOP_WIN%
+	mkdir "%HOST_DESKTOP_WIN%"
+	if errorlevel 1 (
+		echo [ERROR] Unable to create Desktop folder: %HOST_DESKTOP_WIN%
+		exit /b 1
+	)
+)
+
 echo [INFO] Building media-processor image...
 docker build -t %IMAGE_NAME% -f "%DOCKERFILE_PATH%" "%BUILD_CONTEXT%" 2>&1
 if errorlevel 1 (
@@ -51,7 +63,7 @@ echo [INFO] Removing previous container if present...
 docker rm -f %CONTAINER_NAME% >nul 2>nul
 
 echo [INFO] Starting media-processor container...
-docker run -d --rm --name %CONTAINER_NAME% -p %UI_PORT%:8085 -p %API_PORT%:8086 %IMAGE_NAME% >nul
+docker run -d --rm --name %CONTAINER_NAME% -p %UI_PORT%:8085 -p %API_PORT%:8086 -e HOST_DESKTOP_DIR=%HOST_DESKTOP_CONTAINER% -v "%HOST_DESKTOP_WIN%:%HOST_DESKTOP_CONTAINER%" %IMAGE_NAME% >nul
 if errorlevel 1 (
 	echo [ERROR] Docker run failed.
 	exit /b 1
@@ -78,6 +90,7 @@ if "%READY%"=="1" (
 
 echo [INFO] UI:  http://localhost:%UI_PORT%
 echo [INFO] API: http://localhost:%API_PORT%
+echo [INFO] Output folder base: %HOST_DESKTOP_WIN%
 echo [INFO] Logs: docker logs -f %CONTAINER_NAME%
 echo [INFO] Stop: docker stop %CONTAINER_NAME%
 

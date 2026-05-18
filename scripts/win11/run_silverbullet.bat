@@ -78,39 +78,13 @@ if not exist "%SB_SPACE_PATH%" (
 echo.
 
 REM ---------------------------------------------------------------------------
-REM OPTIONAL BACKUP SPACE FOLDER
+REM BACKUP SPACE FOLDER TO DESKTOP
 REM ---------------------------------------------------------------------------
 
-:backup_prompt
 echo.
-set "BACKUP_CHOICE="
-set /p BACKUP_CHOICE="Do you want to backup the space folder elsewhere? (y/n): "
-if errorlevel 1 (
-    echo [INFO] Non-interactive mode detected. Defaulting backup choice to 'n'.
-    set "BACKUP_CHOICE=n"
-)
+echo [INFO] Backing up space folder to Desktop.
 
-if /i "%BACKUP_CHOICE%"=="y" goto :backup_destination
-if /i "%BACKUP_CHOICE%"=="yes" goto :backup_destination
-if /i "%BACKUP_CHOICE%"=="n" goto :sync_prompt
-if /i "%BACKUP_CHOICE%"=="no" goto :sync_prompt
-
-echo [ERROR] Invalid choice. Please enter 'y' or 'n'.
-goto :backup_prompt
-
-:backup_destination
-echo.
-set "BACKUP_BASE_PATH="
-set /p BACKUP_BASE_PATH="Enter backup destination folder path (default: %USERPROFILE%\Desktop): "
-
-if not defined BACKUP_BASE_PATH set "BACKUP_BASE_PATH=%USERPROFILE%\Desktop"
-
-if "%BACKUP_BASE_PATH:~0,1%"=="~" set "BACKUP_BASE_PATH=%USERPROFILE%%BACKUP_BASE_PATH:~1%"
-
-if not exist "%BACKUP_BASE_PATH%" (
-    echo [ERROR] Path does not exist: %BACKUP_BASE_PATH%
-    goto :backup_destination
-)
+set "BACKUP_BASE_PATH=%USERPROFILE%\Desktop"
 
 for /f "tokens=*" %%i in ('powershell -NoProfile -Command "Get-Date -Format yyyyMMdd-HHmmss"') do set "BACKUP_TS=%%i"
 set "BACKUP_TARGET=%BACKUP_BASE_PATH%\silverbullet-space-backup-%BACKUP_TS%"
@@ -118,91 +92,16 @@ set "BACKUP_TARGET=%BACKUP_BASE_PATH%\silverbullet-space-backup-%BACKUP_TS%"
 mkdir "%BACKUP_TARGET%" >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] Failed to create backup folder: %BACKUP_TARGET%
-    goto :backup_destination
+    exit /b 1
 )
 
-echo [INFO] Backing up space folder to: %BACKUP_TARGET%
 robocopy "%SB_SPACE_PATH%" "%BACKUP_TARGET%" /E >nul
 if errorlevel 8 (
     echo [ERROR] Backup failed.
     exit /b 1
 ) else (
-    echo [OK] Backup completed successfully.
+    echo [OK] Backup completed: %BACKUP_TARGET%
 )
-
-REM ---------------------------------------------------------------------------
-REM OPTIONAL COPY FROM ANOTHER FOLDER
-REM ---------------------------------------------------------------------------
-
-:sync_prompt
-echo.
-set "SYNC_CHOICE="
-set /p SYNC_CHOICE="Do you want to copy markdown files from another folder? (y/n): "
-if errorlevel 1 (
-    echo [INFO] Non-interactive mode detected. Defaulting copy choice to 'n'.
-    set "SYNC_CHOICE=n"
-)
-
-if /i "%SYNC_CHOICE%"=="y" goto :sync_source
-if /i "%SYNC_CHOICE%"=="yes" goto :sync_source
-if /i "%SYNC_CHOICE%"=="n" (
-    echo [INFO] Skipping copy.
-    goto :after_sync
-)
-if /i "%SYNC_CHOICE%"=="no" (
-    echo [INFO] Skipping copy.
-    goto :after_sync
-)
-
-echo [ERROR] Invalid choice. Please enter 'y' or 'n'.
-goto :sync_prompt
-
-:sync_source
-echo.
-set "SOURCE_PATH="
-set /p SOURCE_PATH="Enter path to source markdown folder: "
-
-if not defined SOURCE_PATH (
-    echo [ERROR] Path cannot be empty.
-    goto :sync_source
-)
-
-if "%SOURCE_PATH:~0,1%"=="~" set "SOURCE_PATH=%USERPROFILE%%SOURCE_PATH:~1%"
-
-if not exist "%SOURCE_PATH%" (
-    echo [ERROR] Path does not exist: %SOURCE_PATH%
-    goto :sync_source
-)
-
-echo [INFO] Copying markdown files from: %SOURCE_PATH%
-set "FOUND_MD="
-set /a COPY_COUNT=0
-
-for %%F in ("%SOURCE_PATH%\*.md") do (
-    if exist "%%~fF" (
-        set "FOUND_MD=1"
-        if exist "%SB_SPACE_PATH%\%%~nxF" (
-            choice /c YN /n /m "File already exists: %%~nxF. Overwrite? [Y/N]: "
-            if errorlevel 2 (
-                echo [INFO] Skipped: %%~nxF
-            ) else (
-                copy /y "%%~fF" "%SB_SPACE_PATH%\%%~nxF" >nul 2>nul
-                if not errorlevel 1 set /a COPY_COUNT+=1
-            )
-        ) else (
-            copy "%%~fF" "%SB_SPACE_PATH%\%%~nxF" >nul 2>nul
-            if not errorlevel 1 set /a COPY_COUNT+=1
-        )
-    )
-)
-
-if not defined FOUND_MD (
-    echo [WARNING] No markdown files found in source folder.
-) else (
-    echo [OK] Copy step completed. Files copied: !COPY_COUNT!
-)
-
-:after_sync
 
 echo.
 

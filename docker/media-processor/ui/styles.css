@@ -3,10 +3,88 @@ body {
   padding: 1rem;
 }
 
+.top-layout {
+  display: flex;
+  gap: 1rem;
+  font-family: "Times New Roman", Times, serif;
+}
+
+.top-box {
+  width: 50%;
+  border: 1px solid #d8d8d8;
+  padding: 1rem;
+  box-sizing: border-box;
+  background: #fff;
+}
+
+.top-box h1,
+.top-box h2 {
+  margin-top: 0;
+  font-weight: normal;
+}
+
+.top-box p {
+  margin: 0.35rem 0;
+}
+
+.drop-zone {
+  margin-top: 0.8rem;
+  border: 1px dashed #9a9a9a;
+  padding: 1.2rem;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+  background: #fcfcfc;
+}
+
+.drop-zone.active {
+  border-color: #4b4b4b;
+  background: #f2f2f2;
+}
+
+.drop-actions {
+  margin-top: 0.7rem;
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.paths-title {
+  margin-top: 0.8rem;
+  margin-bottom: 0.2rem;
+  font-size: 0.95rem;
+}
+
+.paths-output {
+  margin: 0;
+  padding: 0.7rem;
+  border: 1px solid #d8d8d8;
+  background: #fafafa;
+  min-height: 5.5rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 0.9rem;
+}
+
+#status {
+  margin-top: 0.6rem;
+  min-height: 1.2rem;
+}
+
 .section-divider {
   margin: 2rem 0;
   border: none;
   border-top: 1px solid #ccc;
+}
+
+@media (max-width: 768px) {
+  .top-layout {
+    flex-direction: column;
+  }
+
+  .top-box {
+    width: 100%;
+  }
 }
 
 .simple-ui {
@@ -74,6 +152,13 @@ body {
   border: 1px solid #ddd;
   background: #fafafa;
   white-space: pre-wrap;
+}
+
+.pandoc-actions {
+  margin-top: 0.9rem;
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
 }
 
 .upload-status {
