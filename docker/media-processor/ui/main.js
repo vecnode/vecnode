@@ -411,6 +411,7 @@ async function runRevealFromMarkdownInput() {
   const markdownEntries = Array.from(collectedFileMap.entries()).filter(([pathValue]) =>
     isMarkdownPath(pathValue)
   );
+  const allEntries = Array.from(collectedFileMap.entries());
 
   if (!markdownEntries.length) {
     revealStatus.textContent = "No Markdown files found in the current paths.";
@@ -422,7 +423,7 @@ async function runRevealFromMarkdownInput() {
     "Expected format: frontmatter + slide sections.";
 
   const form = new FormData();
-  for (const [pathValue, file] of markdownEntries) {
+  for (const [pathValue, file] of allEntries) {
     form.append("files", file, pathValue);
     form.append("paths", pathValue);
   }

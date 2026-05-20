@@ -88,6 +88,7 @@ async def pandoc_markdown_to_reveal(
 
     with tempfile.TemporaryDirectory(prefix="pandoc-reveal-") as temp_root:
         temp_root_path = Path(temp_root)
+        markdown_inputs: list[Path] = []
 
         for index, upload in enumerate(files):
             raw = await upload.read()
@@ -96,12 +97,17 @@ async def pandoc_markdown_to_reveal(
             submitted_path = paths[index] if index < len(paths) else upload.filename
             safe_relative = safe_relative_path(submitted_path or upload.filename or f"file-{index}.md")
 
-            if safe_relative.suffix.lower() not in {".md", ".markdown"}:
-                continue
-
             input_path = temp_root_path / safe_relative
             input_path.parent.mkdir(parents=True, exist_ok=True)
-            input_path.write_bytes(prepare_markdown_for_reveal(raw))
+
+            if safe_relative.suffix.lower() in {".md", ".markdown"}:
+                input_path.write_bytes(prepare_markdown_for_reveal(raw))
+                markdown_inputs.append(safe_relative)
+            else:
+                input_path.write_bytes(raw)
+
+        for safe_relative in markdown_inputs:
+            input_path = temp_root_path / safe_relative
 
             output_html_rel = safe_relative.with_suffix(".html")
             output_html = output_dir / output_html_rel
@@ -209,6 +215,7 @@ async def convert_markdown_to_pdf(
 
     with tempfile.TemporaryDirectory(prefix="pandoc-md-") as temp_root:
         temp_root_path = Path(temp_root)
+        markdown_inputs: list[Path] = []
 
         for index, upload in enumerate(files):
             raw = await upload.read()
@@ -217,12 +224,17 @@ async def convert_markdown_to_pdf(
             submitted_path = paths[index] if index < len(paths) else upload.filename
             safe_relative = safe_relative_path(submitted_path or upload.filename or f"file-{index}.md")
 
-            if safe_relative.suffix.lower() not in {".md", ".markdown"}:
-                continue
-
             input_path = temp_root_path / safe_relative
             input_path.parent.mkdir(parents=True, exist_ok=True)
-            input_path.write_bytes(normalize_markdown_frontmatter_bytes(raw))
+
+            if safe_relative.suffix.lower() in {".md", ".markdown"}:
+                input_path.write_bytes(normalize_markdown_frontmatter_bytes(raw))
+                markdown_inputs.append(safe_relative)
+            else:
+                input_path.write_bytes(raw)
+
+        for safe_relative in markdown_inputs:
+            input_path = temp_root_path / safe_relative
 
             output_pdf_rel = safe_relative.with_suffix(".pdf")
             output_pdf = output_dir / output_pdf_rel
@@ -486,12 +498,16 @@ def build_presentation_urls(output_base: Path, output_dir: Path, generated_files
 
 
 def run_markdown_pdf_command(input_path: Path, output_pdf: Path, mode: str) -> None:
+    resource_dir = str(input_path.parent)
+
     if mode == "viewer":
         subprocess.check_output(
             [
                 "pandoc",
                 str(input_path),
                 "--from=gfm",
+                "--resource-path",
+                resource_dir,
                 "--pdf-engine=xelatex",
                 "-V",
                 "mainfont=Latin Modern Sans",
@@ -511,6 +527,7 @@ def run_markdown_pdf_command(input_path: Path, output_pdf: Path, mode: str) -> N
             ],
             stderr=subprocess.STDOUT,
             text=True,
+            cwd=resource_dir,
         )
         return
 
@@ -518,19 +535,26 @@ def run_markdown_pdf_command(input_path: Path, output_pdf: Path, mode: str) -> N
         [
             "pandoc",
             str(input_path),
+            "--resource-path",
+            resource_dir,
             "--pdf-engine=xelatex",
             "-o",
             str(output_pdf),
         ],
         stderr=subprocess.STDOUT,
         text=True,
+        cwd=resource_dir,
     )
 
 
 def run_markdown_reveal_command(input_path: Path, output_html: Path) -> None:
+    resource_dir = str(input_path.parent)
+
     base_args = [
         "pandoc",
         str(input_path),
+        "--resource-path",
+        resource_dir,
         "-t",
         "revealjs",
         "-s",
@@ -562,6 +586,7 @@ def run_markdown_reveal_command(input_path: Path, output_html: Path) -> None:
             [*base_args[:-2], "--embed-resources", *base_args[-2:]],
             stderr=subprocess.STDOUT,
             text=True,
+            cwd=resource_dir,
         )
         apply_reveal_title_scale(output_html=output_html, scale=0.8)
     except subprocess.CalledProcessError as exc:
@@ -574,6 +599,7 @@ def run_markdown_reveal_command(input_path: Path, output_html: Path) -> None:
             [*base_args[:-2], "--self-contained", *base_args[-2:]],
             stderr=subprocess.STDOUT,
             text=True,
+            cwd=resource_dir,
         )
         apply_reveal_title_scale(output_html=output_html, scale=0.8)
 
@@ -583,6 +609,9 @@ def apply_reveal_title_scale(output_html: Path, scale: float) -> None:
         html_text = output_html.read_text(encoding="utf-8")
     except Exception:
         return
+
+    # Remove figure captions so slides show images without caption text.
+    html_text = re.sub(r"<figcaption[^>]*>.*?</figcaption>", "", html_text, flags=re.IGNORECASE | re.DOTALL)
 
     marker = "<!-- vecnode-title-scale -->"
     if marker in html_text:
