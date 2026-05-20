@@ -16,6 +16,7 @@
       <section>
         <p><strong>UI:</strong> <code>http://localhost:8085</code></p>
         <p><strong>API:</strong> <code>http://localhost:8086</code></p>
+        <p><strong>Presentations:</strong> <code>http://localhost:8087</code></p>
       </section>
 
       <button id="check">Check API Health</button>
@@ -49,8 +50,9 @@
   <main class="simple-ui">
     <div class="menu-bar" role="tablist" aria-label="Processor menu">
       <button class="menu-btn active" id="tabPandoc" type="button" data-target="panelPandoc" role="tab" aria-selected="true">Pandoc Processor</button>
+      <button class="menu-btn" id="tabReveal" type="button" data-target="panelReveal" role="tab" aria-selected="false">Reveal Presenter</button>
       <button class="menu-btn" id="tabDownloader" type="button" data-target="panelDownloader" role="tab" aria-selected="false">Media Downloader</button>
-      <button class="menu-btn" id="tabImage" type="button" data-target="panelImage" role="tab" aria-selected="false">Image Processor</button>
+      <button class="menu-btn" id="tabImage" type="button" data-target="panelImage" role="tab" aria-selected="false">Media Processor</button>
     </div>
 
     <section id="panelPandoc" class="processor-panel active" role="tabpanel" aria-labelledby="tabPandoc">
@@ -65,13 +67,24 @@
       <pre id="pandocConvertStatus" class="pandoc-status"></pre>
     </section>
 
+    <section id="panelReveal" class="processor-panel" role="tabpanel" aria-labelledby="tabReveal">
+      <h2 class="simple-title">Reveal Presenter</h2>
+      <p class="simple-subtitle">Generate and open Reveal.js presentations from Markdown.</p>
+      <div class="pandoc-actions">
+        <button id="revealFromMarkdownBtn" type="button">Generate Reveal from Markdown</button>
+        <button id="revealFromMdInputBtn" type="button">Generate Reveal from MD Input</button>
+        <button id="revealOpenRootBtn" type="button">Open Presentation Root</button>
+      </div>
+      <pre id="revealStatus" class="pandoc-status"></pre>
+    </section>
+
     <section id="panelDownloader" class="processor-panel" role="tabpanel" aria-labelledby="tabDownloader">
       <h2 class="simple-title">Media Downloader</h2>
       <p class="simple-subtitle">lorem ipsum</p>
     </section>
 
     <section id="panelImage" class="processor-panel" role="tabpanel" aria-labelledby="tabImage">
-      <h2 class="simple-title">Image Processor</h2>
+      <h2 class="simple-title">Media Processor</h2>
       <p class="simple-subtitle">
         Select an image file. The backend will return its metadata and a grayscale version.
       </p>

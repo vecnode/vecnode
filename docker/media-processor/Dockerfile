@@ -36,6 +36,7 @@ COPY . /app
 # Normalize script line endings and make scripts executable
 RUN sed -i 's/\r$//' /app/docker/media-processor/main.sh \
     /app/docker/media-processor/ui_server.py \
+    /app/docker/media-processor/presentation_server.py \
     /app/docker/media-processor/api_server.py && \
     cp /app/assets/icons/black-square.svg /app/docker/media-processor/ui/favicon.svg && \
     chmod +x /app/docker/media-processor/main.sh && \
@@ -44,6 +45,7 @@ RUN sed -i 's/\r$//' /app/docker/media-processor/main.sh \
 # Web access ports
 EXPOSE 8085
 EXPOSE 8086
+EXPOSE 8087
 
 # Run media-processor web services by default.
 ENTRYPOINT ["/bin/bash", "/app/docker/media-processor/main.sh"]

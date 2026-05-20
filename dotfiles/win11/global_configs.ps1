@@ -199,7 +199,7 @@ Write-Host "[INFO] Hidden files are now visible in Explorer."
 # ---------------------------------------------------------------------------
 # Show full path in Explorer title bar
 # By default, Explorer title shows just the folder name ("Desktop").
-# FullPath = 1 shows the full path ("C:\Users\luisarandas\Desktop").
+# FullPath = 1 shows the full path ("C:\Users\user\Desktop").
 # ---------------------------------------------------------------------------
 Set-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CabinetState" -Name "FullPath" -Value 1 -Type DWord
 Write-Host "[INFO] Full path now displayed in Explorer title bar."

@@ -237,6 +237,10 @@ const pandocVersionStatus = document.getElementById("pandocVersionStatus");
 const pandocMdToPdfBtn = document.getElementById("pandocMdToPdfBtn");
 const pandocMdToPdf2Btn = document.getElementById("pandocMdToPdf2Btn");
 const pandocConvertStatus = document.getElementById("pandocConvertStatus");
+const revealFromMarkdownBtn = document.getElementById("revealFromMarkdownBtn");
+const revealFromMdInputBtn = document.getElementById("revealFromMdInputBtn");
+const revealOpenRootBtn = document.getElementById("revealOpenRootBtn");
+const revealStatus = document.getElementById("revealStatus");
 
 function formatSeconds(value) {
   return `${Math.max(0, value).toFixed(1)}s`;
@@ -266,6 +270,20 @@ pandocMdToPdf2Btn.addEventListener("click", async () => {
     endpoint: "http://localhost:8086/pandoc/markdown-to-pdf-viewer",
     modeLabel: "Viewer-style",
   });
+});
+
+revealFromMarkdownBtn.addEventListener("click", async () => {
+  await runRevealFromMarkdownTemplate();
+});
+
+revealFromMdInputBtn.addEventListener("click", async () => {
+  await runRevealFromMarkdownInput();
+});
+
+revealOpenRootBtn.addEventListener("click", async () => {
+  const rootUrl = "http://localhost:8087";
+  revealStatus.textContent = `Opened: ${rootUrl}`;
+  window.open(rootUrl, "_blank", "noopener,noreferrer");
 });
 
 async function runMarkdownToPdfConversion({ endpoint, modeLabel }) {
@@ -331,6 +349,130 @@ async function runMarkdownToPdfConversion({ endpoint, modeLabel }) {
     pandocConvertStatus.textContent = lines.join("\n");
   } catch (error) {
     pandocConvertStatus.textContent = "Error: " + error.message;
+  } finally {
+    window.clearInterval(progressTimer);
+  }
+}
+
+async function runRevealFromMarkdownTemplate() {
+  revealStatus.textContent = "Generating Reveal.js presentation from markdown template...";
+
+  const requestStartedAt = performance.now();
+  const progressTimer = window.setInterval(() => {
+    const elapsed = (performance.now() - requestStartedAt) / 1000;
+    revealStatus.textContent =
+      "Building Reveal.js presentation from markdown template...\n" +
+      `Elapsed: ${formatSeconds(elapsed)}`;
+  }, 700);
+
+  try {
+    const res = await fetch("http://localhost:8086/pandoc/reveal-from-markdown", {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+
+    const data = await res.json();
+    const urls = Array.isArray(data.presentation_urls) ? data.presentation_urls : [];
+
+    const lines = [
+      "Mode: Reveal Presenter (Markdown Template)",
+      `Template file: ${data.template_file || "default_reveal_presentation.md"}`,
+      `Output folder: ${data.output_folder}`,
+      `Generated: ${data.generated_count}`,
+      `Time: ${formatSeconds(Number(data.duration_seconds || 0))}`,
+    ];
+
+    if (Array.isArray(data.generated_files) && data.generated_files.length) {
+      lines.push("", "Presentation files:", ...data.generated_files);
+    }
+
+    if (urls.length) {
+      lines.push("", "Presentation URLs:", ...urls);
+      lines.push("", "Opened first URL in a new tab.");
+      window.open(urls[0], "_blank", "noopener,noreferrer");
+    }
+
+    if (data.note) {
+      lines.push("", `Note: ${data.note}`);
+    }
+
+    revealStatus.textContent = lines.join("\n");
+  } catch (error) {
+    revealStatus.textContent = "Error: " + error.message;
+  } finally {
+    window.clearInterval(progressTimer);
+  }
+}
+
+async function runRevealFromMarkdownInput() {
+  const markdownEntries = Array.from(collectedFileMap.entries()).filter(([pathValue]) =>
+    isMarkdownPath(pathValue)
+  );
+
+  if (!markdownEntries.length) {
+    revealStatus.textContent = "No Markdown files found in the current paths.";
+    return;
+  }
+
+  revealStatus.textContent =
+    `Preparing ${markdownEntries.length} Markdown file(s) for Reveal conversion...\n` +
+    "Expected format: frontmatter + slide sections.";
+
+  const form = new FormData();
+  for (const [pathValue, file] of markdownEntries) {
+    form.append("files", file, pathValue);
+    form.append("paths", pathValue);
+  }
+
+  const requestStartedAt = performance.now();
+  const progressTimer = window.setInterval(() => {
+    const elapsed = (performance.now() - requestStartedAt) / 1000;
+    revealStatus.textContent =
+      `Building Reveal.js presentation(s) from ${markdownEntries.length} input Markdown file(s)...\n` +
+      `Elapsed: ${formatSeconds(elapsed)}`;
+  }, 700);
+
+  try {
+    const res = await fetch("http://localhost:8086/pandoc/markdown-to-reveal", {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || res.statusText);
+    }
+
+    const data = await res.json();
+    const urls = Array.isArray(data.presentation_urls) ? data.presentation_urls : [];
+
+    const lines = [
+      "Mode: Reveal Presenter (MD Input)",
+      `Input markdown files: ${markdownEntries.length}`,
+      `Output folder: ${data.output_folder}`,
+      `Generated: ${data.generated_count}`,
+      `Time: ${formatSeconds(Number(data.duration_seconds || 0))}`,
+    ];
+
+    if (Array.isArray(data.generated_files) && data.generated_files.length) {
+      lines.push("", "Presentation files:", ...data.generated_files);
+    }
+
+    if (urls.length) {
+      lines.push("", "Presentation URLs:", ...urls);
+      lines.push("", "Opened first URL in a new tab.");
+      window.open(urls[0], "_blank", "noopener,noreferrer");
+    }
+
+    if (data.note) {
+      lines.push("", `Note: ${data.note}`);
+    }
+
+    revealStatus.textContent = lines.join("\n");
+  } catch (error) {
+    revealStatus.textContent = "Error: " + error.message;
   } finally {
     window.clearInterval(progressTimer);
   }
