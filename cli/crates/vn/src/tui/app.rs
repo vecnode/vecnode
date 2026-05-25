@@ -54,6 +54,14 @@ enum ProcEvent {
     Stderr(String),
 }
 
+enum LogEntry {
+    Command(String),
+    Info(String),
+    Error(String),
+    Stdout(String),
+    Stderr(String),
+}
+
 enum Focus {
     Dashboard,
     Input,
@@ -74,7 +82,7 @@ struct AppState {
     menu: MenuKind,
     commands: Vec<CommandItem>,
     selected: usize,
-    logs: Vec<String>,
+    logs: Vec<LogEntry>,
     running: Vec<RunningProcess>,
     tx: Sender<ProcEvent>,
     rx: Receiver<ProcEvent>,
@@ -249,29 +257,32 @@ impl AppState {
         match item.action {
             Action::OpenMenu(next_menu) => {
                 if !menu_allowed_on_current_os(next_menu) {
-                    self.logs.push(format!("> {}", item.label));
-                    self.logs
-                        .push("[WARNING] This submenu is not supported on the current OS.".to_string());
+                    self.logs.push(LogEntry::Command(item.label.to_string()));
+                    self.logs.push(LogEntry::Error(
+                        "[WARNING] This submenu is not supported on the current OS.".to_string(),
+                    ));
                     if cfg!(windows) {
-                        self.logs
-                            .push("[INFO] Windows host: use vn run win11 submenu items.".to_string());
+                        self.logs.push(LogEntry::Info(
+                            "[INFO] Windows host: use vn run win11 submenu items.".to_string(),
+                        ));
                     } else {
-                        self.logs
-                            .push("[INFO] Non-Windows host: use vn run ubuntu22 submenu items.".to_string());
+                        self.logs.push(LogEntry::Info(
+                            "[INFO] Non-Windows host: use vn run ubuntu22 submenu items.".to_string(),
+                        ));
                     }
                     self.trim_logs();
                     return;
                 }
 
-                self.logs.push(format!("> {}", item.label));
-                self.logs.push("[INFO] Opened submenu.".to_string());
+                self.logs.push(LogEntry::Command(item.label.to_string()));
+                self.logs.push(LogEntry::Info("[INFO] Opened submenu.".to_string()));
                 self.set_menu(next_menu);
                 self.trim_logs();
                 return;
             }
             Action::BackToRoot => {
-                self.logs.push(format!("> {}", item.label));
-                self.logs.push("[INFO] Returned to Dashboard.".to_string());
+                self.logs.push(LogEntry::Command(item.label.to_string()));
+                self.logs.push(LogEntry::Info("[INFO] Returned to Dashboard.".to_string()));
                 self.set_menu(MenuKind::Root);
                 self.trim_logs();
                 return;
@@ -283,13 +294,15 @@ impl AppState {
     }
 
     fn spawn_process(&mut self, label: &str, args: Vec<&'static str>) {
-        self.logs.push(format!("> {}", label));
+        self.logs.push(LogEntry::Command(label.to_string()));
 
         let exe = match env::current_exe() {
             Ok(path) => path,
             Err(err) => {
-                self.logs
-                    .push(format!("[ERROR] Could not resolve current executable: {}", err));
+                self.logs.push(LogEntry::Error(format!(
+                    "[ERROR] Could not resolve current executable: {}",
+                    err
+                )));
                 self.trim_logs();
                 return;
             }
@@ -304,8 +317,10 @@ impl AppState {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(err) => {
-                self.logs
-                    .push(format!("[ERROR] Failed to start command: {}", err));
+                self.logs.push(LogEntry::Error(format!(
+                    "[ERROR] Failed to start command: {}",
+                    err
+                )));
                 self.trim_logs();
                 return;
             }
@@ -353,7 +368,7 @@ impl AppState {
         }
 
         self.logs
-            .push("[INFO] Process started in background.".to_string());
+            .push(LogEntry::Info("[INFO] Process started in background.".to_string()));
         self.running.push(RunningProcess {
             label: label.to_string(),
             child,
@@ -368,9 +383,9 @@ impl AppState {
         }
 
         self.input.clear();
-        self.logs.push(
+        self.logs.push(LogEntry::Info(
             "[INFO] Input forwarding is disabled. Commands run in background mode.".to_string(),
-        );
+        ));
 
         self.trim_logs();
     }
@@ -378,8 +393,12 @@ impl AppState {
     fn pump_process(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             match event {
-                ProcEvent::Stdout(chunk) => self.logs.extend(split_to_lines(chunk, false)),
-                ProcEvent::Stderr(chunk) => self.logs.extend(split_to_lines(chunk, true)),
+                ProcEvent::Stdout(chunk) => self
+                    .logs
+                    .extend(split_to_entries(chunk, false).into_iter().map(LogEntry::Stdout)),
+                ProcEvent::Stderr(chunk) => self
+                    .logs
+                    .extend(split_to_entries(chunk, true).into_iter().map(LogEntry::Stderr)),
             }
         }
 
@@ -390,18 +409,18 @@ impl AppState {
                 match proc.child.try_wait() {
                     Ok(Some(status)) => (
                         true,
-                        Some(format!(
+                        Some(LogEntry::Info(format!(
                             "[INFO] Process '{}' exited with status: {}",
                             proc.label, status
-                        )),
+                        ))),
                     ),
                     Ok(None) => (false, None),
                     Err(err) => (
                         true,
-                        Some(format!(
+                        Some(LogEntry::Error(format!(
                             "[ERROR] Failed checking process '{}' status: {}",
                             proc.label, err
-                        )),
+                        ))),
                     ),
                 }
             };
@@ -448,7 +467,7 @@ impl AppState {
     }
 }
 
-fn split_to_lines(chunk: String, is_stderr: bool) -> Vec<String> {
+fn split_to_entries(chunk: String, is_stderr: bool) -> Vec<String> {
     let normalized = chunk.replace("\r\n", "\n").replace('\r', "\n");
     let mut out = Vec::new();
 
@@ -844,140 +863,9 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
     loop {
         app.pump_process();
 
-        terminal.draw(|frame| {
-            let areas = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Length(3),
-                    Constraint::Min(5),
-                    Constraint::Length(4),
-                ])
-                .split(frame.area());
-
-            let header = Paragraph::new("vecnode vn")
-                .style(
-                    Style::default()
-                        .add_modifier(Modifier::BOLD),
-                )
-                .block(Block::default().borders(Borders::ALL).title("CLI"));
-
-            let middle = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
-                .split(areas[1]);
-
-            let left_panels = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
-                .split(middle[0]);
-
-            let button_items: Vec<ListItem> = app
-                .commands
-                .iter()
-                .enumerate()
-                .map(|(idx, cmd)| {
-                    if idx == app.selected {
-                        ListItem::new(Line::from(vec![
-                            Span::styled(
-                                format!("[ {} ]", cmd.label),
-                                Style::default()
-                                    .fg(Color::Black)
-                                    .bg(Color::Cyan)
-                                    .add_modifier(Modifier::BOLD),
-                            ),
-                        ]))
-                    } else {
-                        ListItem::new(Line::from(vec![
-                            Span::styled(
-                                format!("[ {} ]", cmd.label),
-                                Style::default().fg(Color::White),
-                            ),
-                        ]))
-                    }
-                })
-                .collect();
-
-            let mut list_state = ListState::default();
-            list_state.select(Some(app.selected));
-
-            let dashboard = List::new(button_items)
-                .block(Block::default().borders(Borders::ALL).title("Dashboard"));
-
-            let docker = Paragraph::new(app.docker_panel_lines())
-                .block(Block::default().borders(Borders::ALL).title("Docker"));
-
-            let log_lines: Vec<Line> = app
-                .logs
-                .iter()
-                .map(|entry| {
-                    if entry.starts_with("> ") {
-                        Line::from(Span::styled(
-                            entry.clone(),
-                            Style::default()
-                                .fg(Color::Black)
-                                .bg(Color::LightGreen)
-                                .add_modifier(Modifier::BOLD),
-                        ))
-                    } else if entry.starts_with("[ERR]") {
-                        Line::from(Span::styled(
-                            entry.clone(),
-                            Style::default().fg(Color::LightRed),
-                        ))
-                    } else {
-                        Line::from(Span::raw(entry.clone()))
-                    }
-                })
-                .collect();
-
-            app.output_view_lines = middle[1].height.saturating_sub(2) as usize;
-            let max_scroll = app.max_output_scroll();
-            if app.follow_output {
-                app.output_scroll = max_scroll;
-            } else if app.output_scroll > max_scroll {
-                app.output_scroll = max_scroll;
-            }
-
-            let output = Paragraph::new(log_lines)
-                .block(Block::default().borders(Borders::ALL).title("CLI Output"))
-                .scroll((app.output_scroll, 0));
-
-            let keys_text = match app.focus {
-                Focus::Dashboard => {
-                    "Tab: input  Up/Down: select  Enter: run  R: refresh docker  ,/.: output page  q/Esc: exit"
-                }
-                Focus::Input => {
-                    "Tab: dashboard  Enter: send input  Backspace: delete  R: refresh docker  ,/.: output page  q/Esc: exit"
-                }
-            };
-
-            let input_text = if app.input.is_empty() {
-                "Type input for running command...".to_string()
-            } else {
-                app.input.clone()
-            };
-
-            let input_style = Style::default().fg(Color::White).bg(Color::Green);
-
-            let footer = Paragraph::new(vec![
-                Line::from(Span::styled(input_text, input_style)),
-                Line::from(Span::styled(keys_text, Style::default().fg(Color::White))),
-            ])
-            .block(Block::default().borders(Borders::ALL).title("Input"));
-
-            frame.render_widget(header, areas[0]);
-            frame.render_stateful_widget(dashboard, left_panels[0], &mut list_state);
-            frame.render_widget(docker, left_panels[1]);
-            frame.render_widget(output, middle[1]);
-            frame.render_widget(footer, areas[2]);
-        })?;
-
         if event::poll(Duration::from_millis(250))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind != KeyEventKind::Press {
-                    continue;
-                }
-
-                match key.code {
+            match event::read()? {
+                Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                     KeyCode::Char('q') | KeyCode::Esc => {
                         app.shutdown();
                         break;
@@ -1025,9 +913,135 @@ fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
                         }
                     }
                     _ => {}
-                }
+                },
+                Event::Resize(_, _) | Event::FocusGained | Event::FocusLost => {}
+                _ => {}
             }
         }
+
+        terminal.draw(|frame| {
+            let areas = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(3),
+                    Constraint::Min(5),
+                    Constraint::Length(4),
+                ])
+                .split(frame.area());
+
+            let header = Paragraph::new("vecnode vn")
+                .style(Style::default().add_modifier(Modifier::BOLD))
+                .block(Block::default().borders(Borders::ALL).title("CLI"));
+
+            let middle = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(40), Constraint::Percentage(60)])
+                .split(areas[1]);
+
+            let left_panels = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .split(middle[0]);
+
+            let button_items: Vec<ListItem> = app
+                .commands
+                .iter()
+                .enumerate()
+                .map(|(idx, cmd)| {
+                    if idx == app.selected {
+                        ListItem::new(Line::from(vec![Span::styled(
+                            format!("[ {} ]", cmd.label),
+                            Style::default()
+                                .fg(Color::Black)
+                                .bg(Color::Cyan)
+                                .add_modifier(Modifier::BOLD),
+                        )]))
+                    } else {
+                        ListItem::new(Line::from(vec![Span::styled(
+                            format!("[ {} ]", cmd.label),
+                            Style::default().fg(Color::White),
+                        )]))
+                    }
+                })
+                .collect();
+
+            let mut list_state = ListState::default();
+            list_state.select(Some(app.selected));
+
+            let dashboard = List::new(button_items)
+                .block(Block::default().borders(Borders::ALL).title("Dashboard"));
+
+            let docker = Paragraph::new(app.docker_panel_lines())
+                .block(Block::default().borders(Borders::ALL).title("Docker"));
+
+            let log_lines: Vec<Line> = app
+                .logs
+                .iter()
+                .map(|entry| {
+                    if let LogEntry::Command(command) = entry {
+                        Line::from(Span::styled(
+                            format!("> {}", command),
+                            Style::default()
+                                .fg(Color::Black)
+                                .bg(Color::LightGreen)
+                                .add_modifier(Modifier::BOLD),
+                        ))
+                    } else if let LogEntry::Error(text) = entry {
+                        Line::from(Span::styled(text.clone(), Style::default().fg(Color::LightRed)))
+                    } else if let LogEntry::Stderr(text) = entry {
+                        Line::from(Span::styled(text.clone(), Style::default().fg(Color::LightYellow)))
+                    } else if let LogEntry::Stdout(text) = entry {
+                        Line::from(Span::raw(text.clone()))
+                    } else {
+                        match entry {
+                            LogEntry::Info(text) => Line::from(Span::raw(text.clone())),
+                            _ => Line::from(Span::raw(String::new())),
+                        }
+                    }
+                })
+                .collect();
+
+            app.output_view_lines = middle[1].height.saturating_sub(2) as usize;
+            let max_scroll = app.max_output_scroll();
+            if app.follow_output {
+                app.output_scroll = max_scroll;
+            } else if app.output_scroll > max_scroll {
+                app.output_scroll = max_scroll;
+            }
+
+            let output = Paragraph::new(log_lines)
+                .block(Block::default().borders(Borders::ALL).title("CLI Output"))
+                .scroll((app.output_scroll, 0));
+
+            let keys_text = match app.focus {
+                Focus::Dashboard => {
+                    "Tab: input  Up/Down: select  Enter: run  R: refresh docker  ,/.: output page  q/Esc: exit"
+                }
+                Focus::Input => {
+                    "Tab: dashboard  Enter: send input  Backspace: delete  R: refresh docker  ,/.: output page  q/Esc: exit"
+                }
+            };
+
+            let input_text = if app.input.is_empty() {
+                "Type input for running command...".to_string()
+            } else {
+                app.input.clone()
+            };
+
+            let input_style = Style::default().fg(Color::White).bg(Color::Green);
+
+            let footer = Paragraph::new(vec![
+                Line::from(Span::styled(input_text, input_style)),
+                Line::from(Span::styled(keys_text, Style::default().fg(Color::White))),
+            ])
+            .block(Block::default().borders(Borders::ALL).title("Input"));
+
+            frame.render_widget(header, areas[0]);
+            frame.render_stateful_widget(dashboard, left_panels[0], &mut list_state);
+            frame.render_widget(docker, left_panels[1]);
+            frame.render_widget(output, middle[1]);
+            frame.render_widget(footer, areas[2]);
+        })?;
     }
 
     Ok(())
