@@ -301,6 +301,26 @@ public class Desktop {
 # SPI_SETDESKWALLPAPER=0x14, SPIF_UPDATEINIFILE=0x01, SPIF_SENDCHANGE=0x02
 [Desktop]::SystemParametersInfo(0x0014, 0, $blackBmpPath, 0x01 -bor 0x02) | Out-Null
 Write-Host "[INFO] Desktop background set to solid black (applied immediately)."
+
+
+# ---------------------------------------------------------------------------
+# Enable Win32 long paths support (helps Unreal UAT/UBT packaging on deep paths)
+# Windows legacy MAX_PATH is 260 chars. Setting LongPathsEnabled = 1 allows
+# long path-aware tools to go beyond that limit.
+# Requires Administrator rights (HKLM).
+# Note: Reboot is recommended after applying.
+# ---------------------------------------------------------------------------
+if ($isAdmin) {
+    $fileSystemPath = "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem"
+    if (!(Test-Path $fileSystemPath)) {
+        New-Item -Path $fileSystemPath -Force | Out-Null
+    }
+    Set-ItemProperty -Path $fileSystemPath -Name "LongPathsEnabled" -Value 1 -Type DWord
+    Write-Host "[INFO] Enabled Win32 long paths (LongPathsEnabled=1). Reboot recommended."
+} else {
+    Write-Host "[WARNING] Skipped long paths setting - requires Administrator rights. Re-run as admin to apply."
+}
+
 # vecnode 2026
 
 
