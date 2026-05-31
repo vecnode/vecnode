@@ -56,16 +56,48 @@ def pandoc_version() -> dict[str, str]:
 async def pandoc_markdown_to_pdf(
     files: list[UploadFile] = File(...),
     paths: list[str] = Form(default=[]),
+    links_black: bool = Form(default=False),
+    font_size: str = Form(default=""),
+    paper_size: str = Form(default=""),
+    margin: str = Form(default=""),
+    toc: bool = Form(default=False),
+    number_sections: bool = Form(default=False),
 ) -> dict[str, object]:
-    return await convert_markdown_to_pdf(files=files, paths=paths, mode="latex")
+    return await convert_markdown_to_pdf(
+        files=files,
+        paths=paths,
+        mode="latex",
+        links_black=links_black,
+        font_size=font_size,
+        paper_size=paper_size,
+        margin=margin,
+        toc=toc,
+        number_sections=number_sections,
+    )
 
 
 @app.post("/pandoc/markdown-to-pdf-viewer")
 async def pandoc_markdown_to_pdf_viewer(
     files: list[UploadFile] = File(...),
     paths: list[str] = Form(default=[]),
+    links_black: bool = Form(default=False),
+    font_size: str = Form(default=""),
+    paper_size: str = Form(default=""),
+    margin: str = Form(default=""),
+    toc: bool = Form(default=False),
+    number_sections: bool = Form(default=False),
 ) -> dict[str, object]:
-    return await convert_markdown_to_pdf(files=files, paths=paths, mode="viewer")
+    return await convert_markdown_to_pdf(
+        files=files,
+        paths=paths,
+        mode="viewer",
+        links_black=links_black,
+        font_size=font_size,
+        paper_size=paper_size,
+        margin=margin,
+        toc=toc,
+        number_sections=number_sections,
+    )
 
 
 @app.post("/pandoc/markdown-to-reveal")
@@ -199,6 +231,12 @@ async def convert_markdown_to_pdf(
     files: list[UploadFile],
     paths: list[str],
     mode: str,
+    links_black: bool = False,
+    font_size: str = "",
+    paper_size: str = "",
+    margin: str = "",
+    toc: bool = False,
+    number_sections: bool = False,
 ) -> dict[str, object]:
     if not files:
         raise HTTPException(status_code=400, detail="No files received.")
@@ -241,7 +279,17 @@ async def convert_markdown_to_pdf(
             output_pdf.parent.mkdir(parents=True, exist_ok=True)
 
             try:
-                run_markdown_pdf_command(input_path=input_path, output_pdf=output_pdf, mode=mode)
+                run_markdown_pdf_command(
+                    input_path=input_path,
+                    output_pdf=output_pdf,
+                    mode=mode,
+                    links_black=links_black,
+                    font_size=font_size,
+                    paper_size=paper_size,
+                    margin=margin,
+                    toc=toc,
+                    number_sections=number_sections,
+                )
             except subprocess.CalledProcessError as exc:
                 output_text = (exc.output or "").strip() or str(exc)
                 raise HTTPException(
@@ -455,9 +503,23 @@ def inject_reveal_title_metadata(text: str) -> str:
 def get_output_base_dir() -> tuple[Path, str]:
     configured_host_desktop = os.environ.get("HOST_DESKTOP_DIR", "").strip()
     if configured_host_desktop:
-        host_path = Path(configured_host_desktop)
-        host_path.mkdir(parents=True, exist_ok=True)
-        return host_path, "Saved to HOST_DESKTOP_DIR."
+        raw = configured_host_desktop.replace("\\", "/")
+        candidates: list[str] = [raw]
+
+        # Git Bash may rewrite '/host/Desktop' into 'C:/msys64/host/Desktop'.
+        lower_raw = raw.lower()
+        anchor = "/host/desktop"
+        if anchor in lower_raw:
+            start = lower_raw.find(anchor)
+            candidates.append(raw[start:])
+
+        for candidate in candidates:
+            path_candidate = Path(candidate)
+            try:
+                path_candidate.mkdir(parents=True, exist_ok=True)
+                return path_candidate, "Saved to HOST_DESKTOP_DIR."
+            except OSError:
+                continue
 
     local_desktop = Path.home() / "Desktop"
     if local_desktop.exists():
@@ -497,50 +559,98 @@ def build_presentation_urls(output_base: Path, output_dir: Path, generated_files
     return urls
 
 
-def run_markdown_pdf_command(input_path: Path, output_pdf: Path, mode: str) -> None:
+def run_markdown_pdf_command(
+    input_path: Path,
+    output_pdf: Path,
+    mode: str,
+    links_black: bool = False,
+    font_size: str = "",
+    paper_size: str = "",
+    margin: str = "",
+    toc: bool = False,
+    number_sections: bool = False,
+) -> None:
     resource_dir = str(input_path.parent)
+    normalized_font_size = str(font_size or "").strip().lower()
+    allowed_sizes = {"10pt", "11pt", "12pt"}
+    selected_font_size = normalized_font_size if normalized_font_size in allowed_sizes else ""
+
+    normalized_paper_size = str(paper_size or "").strip().lower()
+    allowed_paper_sizes = {"a4", "letter"}
+    selected_paper_size = normalized_paper_size if normalized_paper_size in allowed_paper_sizes else ""
+
+    normalized_margin = str(margin or "").strip().lower()
+    allowed_margins = {"0.75in", "1in", "1.25in"}
+    selected_margin = normalized_margin if normalized_margin in allowed_margins else "1in"
+
+    link_color = "black" if links_black else "blue"
 
     if mode == "viewer":
-        subprocess.check_output(
+        viewer_args = [
+            "pandoc",
+            str(input_path),
+            "--from=gfm",
+            "--resource-path",
+            resource_dir,
+            "--pdf-engine=xelatex",
+            "-V",
+            "mainfont=Latin Modern Sans",
+            "-V",
+            "sansfont=Latin Modern Sans",
+        ]
+        if toc:
+            viewer_args.append("--toc")
+        if number_sections:
+            viewer_args.append("--number-sections")
+        if selected_font_size:
+            viewer_args.extend(["-V", f"fontsize={selected_font_size}"])
+        else:
+            viewer_args.extend(["-V", "fontsize=11pt"])
+        if selected_paper_size:
+            viewer_args.extend(["-V", f"papersize={selected_paper_size}"])
+        viewer_args.extend(
             [
-                "pandoc",
-                str(input_path),
-                "--from=gfm",
-                "--resource-path",
-                resource_dir,
-                "--pdf-engine=xelatex",
                 "-V",
-                "mainfont=Latin Modern Sans",
-                "-V",
-                "sansfont=Latin Modern Sans",
-                "-V",
-                "fontsize=11pt",
-                "-V",
-                "geometry:margin=1in",
+                f"geometry:margin={selected_margin}",
                 "-V",
                 "colorlinks=true",
                 "-V",
-                "urlcolor=blue",
+                f"urlcolor={link_color}",
                 "--highlight-style=tango",
                 "-o",
                 str(output_pdf),
-            ],
+            ]
+        )
+        subprocess.check_output(
+            viewer_args,
             stderr=subprocess.STDOUT,
             text=True,
             cwd=resource_dir,
         )
         return
 
+    latex_args = [
+        "pandoc",
+        str(input_path),
+        "--resource-path",
+        resource_dir,
+        "--pdf-engine=xelatex",
+    ]
+    if toc:
+        latex_args.append("--toc")
+    if number_sections:
+        latex_args.append("--number-sections")
+    if selected_font_size:
+        latex_args.extend(["-V", f"fontsize={selected_font_size}"])
+    if selected_paper_size:
+        latex_args.extend(["-V", f"papersize={selected_paper_size}"])
+    latex_args.extend(["-V", f"geometry:margin={selected_margin}"])
+    if links_black:
+        latex_args.extend(["-V", "colorlinks=true", "-V", "urlcolor=black"])
+    latex_args.extend(["-o", str(output_pdf)])
+
     subprocess.check_output(
-        [
-            "pandoc",
-            str(input_path),
-            "--resource-path",
-            resource_dir,
-            "--pdf-engine=xelatex",
-            "-o",
-            str(output_pdf),
-        ],
+        latex_args,
         stderr=subprocess.STDOUT,
         text=True,
         cwd=resource_dir,

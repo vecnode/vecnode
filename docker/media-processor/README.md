@@ -16,6 +16,12 @@ Use the TUI action:
 
 This script builds the image, starts the container, waits for health, and opens the browser.
 
+For frontend development with live UI edits, use:
+
+- vn run win11-open-media-processor-dev
+
+This dev script reuses the existing image (builds only if missing), mounts `docker/media-processor/ui` into the container, and lets you refresh the browser after editing HTML/CSS/JS without rebuilding the image.
+
 ## Manual run
 
 From repository root:

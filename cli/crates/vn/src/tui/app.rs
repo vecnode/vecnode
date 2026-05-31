@@ -809,6 +809,10 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "win11-open-media-processor"]),
             },
             CommandItem {
+                label: "vn run win11-open-media-processor-dev",
+                action: Action::Execute(vec!["run", "win11-open-media-processor-dev"]),
+            },
+            CommandItem {
                 label: "< Back to win11",
                 action: Action::OpenMenu(MenuKind::RunWin11),
             },

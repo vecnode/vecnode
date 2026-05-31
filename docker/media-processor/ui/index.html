@@ -49,21 +49,69 @@
 
   <main class="simple-ui">
     <div class="menu-bar" role="tablist" aria-label="Processor menu">
-      <button class="menu-btn active" id="tabPandoc" type="button" data-target="panelPandoc" role="tab" aria-selected="true">Pandoc Processor</button>
-      <button class="menu-btn" id="tabReveal" type="button" data-target="panelReveal" role="tab" aria-selected="false">Reveal Presenter</button>
-      <button class="menu-btn" id="tabDownloader" type="button" data-target="panelDownloader" role="tab" aria-selected="false">Media Downloader</button>
-      <button class="menu-btn" id="tabImage" type="button" data-target="panelImage" role="tab" aria-selected="false">Media Processor</button>
+      <button class="menu-btn active" id="tabPandoc" type="button" data-target="panelPandoc" role="tab" aria-selected="true">1. Pandoc Processor</button>
+      <button class="menu-btn" id="tabReveal" type="button" data-target="panelReveal" role="tab" aria-selected="false">2. Reveal.js Presenter</button>
+      <button class="menu-btn" id="tabDownloader" type="button" data-target="panelDownloader" role="tab" aria-selected="false">3. Media Downloader</button>
+      <button class="menu-btn" id="tabImage" type="button" data-target="panelImage" role="tab" aria-selected="false">4. Media Processor</button>
     </div>
 
     <section id="panelPandoc" class="processor-panel active" role="tabpanel" aria-labelledby="tabPandoc">
       <h2 class="simple-title">Pandoc Processor</h2>
-      <p class="simple-subtitle">lorem ipsum</p>
+      <div class="pandoc-options" aria-label="Pandoc PDF options">
+        <div class="pandoc-options-row">
+          <label class="option-field">
+            <span>PDF profile</span>
+            <select id="pandocPdfModeSelect">
+              <option value="latex">LaTeX-style</option>
+              <option value="viewer">Viewer-style</option>
+            </select>
+          </label>
+          <label class="option-field">
+            <span>Font size</span>
+            <select id="pandocFontSizeSelect">
+              <option value="">Use Markdown/default</option>
+              <option value="10pt">10pt</option>
+              <option value="11pt">11pt</option>
+              <option value="12pt">12pt</option>
+            </select>
+          </label>
+          <label class="option-field option-toggle">
+            <input id="pandocBlackLinksToggle" type="checkbox" />
+            <span>All links black</span>
+          </label>
+        </div>
+        <div class="pandoc-options-row">
+          <label class="option-field">
+            <span>Paper size</span>
+            <select id="pandocPaperSizeSelect">
+              <option value="">Use Markdown/default</option>
+              <option value="a4">A4</option>
+              <option value="letter">Letter</option>
+            </select>
+          </label>
+          <label class="option-field">
+            <span>Margin</span>
+            <select id="pandocMarginSelect">
+              <option value="">Use Markdown/default</option>
+              <option value="0.75in">0.75in</option>
+              <option value="1in">1in</option>
+              <option value="1.25in">1.25in</option>
+            </select>
+          </label>
+          <label class="option-field option-toggle">
+            <input id="pandocTocToggle" type="checkbox" />
+            <span>Table of contents</span>
+          </label>
+          <label class="option-field option-toggle">
+            <input id="pandocNumberSectionsToggle" type="checkbox" />
+            <span>Number sections</span>
+          </label>
+        </div>
+      </div>
       <div class="pandoc-actions">
         <button id="pandocVersionBtn" type="button">Get Pandoc Version</button>
-        <button id="pandocMdToPdfBtn" type="button">Markdown to PDF</button>
-        <button id="pandocMdToPdf2Btn" type="button">Markdown to PDF 2</button>
+        <button id="pandocConvertBtn" type="button">Markdown to PDF</button>
       </div>
-      <pre id="pandocVersionStatus" class="pandoc-status"></pre>
       <pre id="pandocConvertStatus" class="pandoc-status"></pre>
     </section>
 

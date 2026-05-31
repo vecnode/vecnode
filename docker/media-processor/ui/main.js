@@ -233,10 +233,16 @@ for (const btn of menuButtons) {
 
 // --- pandoc processor (new) ---
 const pandocVersionBtn = document.getElementById("pandocVersionBtn");
-const pandocVersionStatus = document.getElementById("pandocVersionStatus");
-const pandocMdToPdfBtn = document.getElementById("pandocMdToPdfBtn");
-const pandocMdToPdf2Btn = document.getElementById("pandocMdToPdf2Btn");
+const pandocConvertBtn = document.getElementById("pandocConvertBtn");
+const pandocPdfModeSelect = document.getElementById("pandocPdfModeSelect");
+const pandocFontSizeSelect = document.getElementById("pandocFontSizeSelect");
+const pandocBlackLinksToggle = document.getElementById("pandocBlackLinksToggle");
+const pandocPaperSizeSelect = document.getElementById("pandocPaperSizeSelect");
+const pandocMarginSelect = document.getElementById("pandocMarginSelect");
+const pandocTocToggle = document.getElementById("pandocTocToggle");
+const pandocNumberSectionsToggle = document.getElementById("pandocNumberSectionsToggle");
 const pandocConvertStatus = document.getElementById("pandocConvertStatus");
+const pandocStatusOutput = pandocConvertStatus;
 const revealFromMarkdownBtn = document.getElementById("revealFromMarkdownBtn");
 const revealFromMdInputBtn = document.getElementById("revealFromMdInputBtn");
 const revealOpenRootBtn = document.getElementById("revealOpenRootBtn");
@@ -246,57 +252,78 @@ function formatSeconds(value) {
   return `${Math.max(0, value).toFixed(1)}s`;
 }
 
-pandocVersionBtn.addEventListener("click", async () => {
-  pandocVersionStatus.textContent = "Loading pandoc version...";
-  try {
-    const res = await fetch("http://localhost:8086/pandoc/version");
-    if (!res.ok) throw new Error("HTTP " + res.status);
-    const data = await res.json();
-    pandocVersionStatus.textContent = data.version || "unavailable";
-  } catch (error) {
-    pandocVersionStatus.textContent = "Error: " + error.message;
+if (pandocVersionBtn && pandocStatusOutput) {
+  pandocVersionBtn.addEventListener("click", async () => {
+    pandocStatusOutput.textContent = "Loading pandoc version...";
+    try {
+      const res = await fetch("http://localhost:8086/pandoc/version");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      const data = await res.json();
+      pandocStatusOutput.textContent = data.version || "unavailable";
+    } catch (error) {
+      pandocStatusOutput.textContent = "Error: " + error.message;
+    }
+  });
+}
+
+if (pandocConvertBtn) {
+  pandocConvertBtn.addEventListener("click", async () => {
+    const selectedMode = String(pandocPdfModeSelect?.value || "latex");
+    const endpoint = selectedMode === "viewer"
+      ? "http://localhost:8086/pandoc/markdown-to-pdf-viewer"
+      : "http://localhost:8086/pandoc/markdown-to-pdf";
+    const modeLabel = selectedMode === "viewer" ? "Viewer-style" : "LaTeX-style";
+
+    await runMarkdownToPdfConversion({
+      endpoint,
+      modeLabel,
+      options: {
+        linksBlack: Boolean(pandocBlackLinksToggle?.checked),
+        fontSize: String(pandocFontSizeSelect?.value || "").trim(),
+        paperSize: String(pandocPaperSizeSelect?.value || "").trim(),
+        margin: String(pandocMarginSelect?.value || "").trim(),
+        toc: Boolean(pandocTocToggle?.checked),
+        numberSections: Boolean(pandocNumberSectionsToggle?.checked),
+      },
+    });
+  });
+}
+
+if (revealFromMarkdownBtn) {
+  revealFromMarkdownBtn.addEventListener("click", async () => {
+    await runRevealFromMarkdownTemplate();
+  });
+}
+
+if (revealFromMdInputBtn) {
+  revealFromMdInputBtn.addEventListener("click", async () => {
+    await runRevealFromMarkdownInput();
+  });
+}
+
+if (revealOpenRootBtn && revealStatus) {
+  revealOpenRootBtn.addEventListener("click", async () => {
+    const rootUrl = "http://localhost:8087";
+    revealStatus.textContent = `Opened: ${rootUrl}`;
+    window.open(rootUrl, "_blank", "noopener,noreferrer");
+  });
+}
+
+async function runMarkdownToPdfConversion({ endpoint, modeLabel, options = {} }) {
+  if (!pandocStatusOutput) {
+    return;
   }
-});
 
-pandocMdToPdfBtn.addEventListener("click", async () => {
-  await runMarkdownToPdfConversion({
-    endpoint: "http://localhost:8086/pandoc/markdown-to-pdf",
-    modeLabel: "LaTeX-style",
-  });
-});
-
-pandocMdToPdf2Btn.addEventListener("click", async () => {
-  await runMarkdownToPdfConversion({
-    endpoint: "http://localhost:8086/pandoc/markdown-to-pdf-viewer",
-    modeLabel: "Viewer-style",
-  });
-});
-
-revealFromMarkdownBtn.addEventListener("click", async () => {
-  await runRevealFromMarkdownTemplate();
-});
-
-revealFromMdInputBtn.addEventListener("click", async () => {
-  await runRevealFromMarkdownInput();
-});
-
-revealOpenRootBtn.addEventListener("click", async () => {
-  const rootUrl = "http://localhost:8087";
-  revealStatus.textContent = `Opened: ${rootUrl}`;
-  window.open(rootUrl, "_blank", "noopener,noreferrer");
-});
-
-async function runMarkdownToPdfConversion({ endpoint, modeLabel }) {
   const markdownEntries = Array.from(collectedFileMap.entries()).filter(([pathValue]) =>
     isMarkdownPath(pathValue)
   );
 
   if (!markdownEntries.length) {
-    pandocConvertStatus.textContent = "No Markdown files found in the current paths.";
+    pandocStatusOutput.textContent = "No Markdown files found in the current paths.";
     return;
   }
 
-  pandocConvertStatus.textContent =
+  pandocStatusOutput.textContent =
     `Preparing ${markdownEntries.length} Markdown file(s)...\n` +
     `Mode: ${modeLabel}`;
 
@@ -305,17 +332,48 @@ async function runMarkdownToPdfConversion({ endpoint, modeLabel }) {
     form.append("files", file, pathValue);
     form.append("paths", pathValue);
   }
+  form.append("links_black", options.linksBlack ? "true" : "false");
+  form.append("toc", options.toc ? "true" : "false");
+  form.append("number_sections", options.numberSections ? "true" : "false");
+  if (options.fontSize) {
+    form.append("font_size", options.fontSize);
+  }
+  if (options.paperSize) {
+    form.append("paper_size", options.paperSize);
+  }
+  if (options.margin) {
+    form.append("margin", options.margin);
+  }
 
-  pandocConvertStatus.textContent =
+  const selectedFontSize = options.fontSize || "default";
+  const linksLabel = options.linksBlack ? "black" : "default";
+  const selectedPaperSize = options.paperSize || "default";
+  const selectedMargin = options.margin || "default";
+  const tocLabel = options.toc ? "on" : "off";
+  const numberSectionsLabel = options.numberSections ? "on" : "off";
+
+  pandocStatusOutput.textContent =
     `Uploading ${markdownEntries.length} Markdown file(s) to API...\n` +
-    `Mode: ${modeLabel}`;
+    `Mode: ${modeLabel}\n` +
+    `Font size: ${selectedFontSize}\n` +
+    `Paper size: ${selectedPaperSize}\n` +
+    `Margin: ${selectedMargin}\n` +
+    `TOC: ${tocLabel}\n` +
+    `Number sections: ${numberSectionsLabel}\n` +
+    `Link color: ${linksLabel}`;
 
   const requestStartedAt = performance.now();
   const progressTimer = window.setInterval(() => {
     const elapsed = (performance.now() - requestStartedAt) / 1000;
-    pandocConvertStatus.textContent =
+    pandocStatusOutput.textContent =
       `Converting ${markdownEntries.length} Markdown file(s)...\n` +
       `Mode: ${modeLabel}\n` +
+      `Font size: ${selectedFontSize}\n` +
+      `Paper size: ${selectedPaperSize}\n` +
+      `Margin: ${selectedMargin}\n` +
+      `TOC: ${tocLabel}\n` +
+      `Number sections: ${numberSectionsLabel}\n` +
+      `Link color: ${linksLabel}\n` +
       `Elapsed: ${formatSeconds(elapsed)}`;
   }, 700);
 
@@ -332,6 +390,12 @@ async function runMarkdownToPdfConversion({ endpoint, modeLabel }) {
     const data = await res.json();
     const lines = [
       `Mode: ${modeLabel}`,
+      `Font size: ${selectedFontSize}`,
+      `Paper size: ${selectedPaperSize}`,
+      `Margin: ${selectedMargin}`,
+      `TOC: ${tocLabel}`,
+      `Number sections: ${numberSectionsLabel}`,
+      `Link color: ${linksLabel}`,
       `Output folder: ${data.output_folder}`,
       `Converted: ${data.converted_count}`,
       `Engine: ${data.engine || "pandoc"}`,
@@ -346,9 +410,9 @@ async function runMarkdownToPdfConversion({ endpoint, modeLabel }) {
       lines.push("", `Note: ${data.note}`);
     }
 
-    pandocConvertStatus.textContent = lines.join("\n");
+    pandocStatusOutput.textContent = lines.join("\n");
   } catch (error) {
-    pandocConvertStatus.textContent = "Error: " + error.message;
+    pandocStatusOutput.textContent = "Error: " + error.message;
   } finally {
     window.clearInterval(progressTimer);
   }

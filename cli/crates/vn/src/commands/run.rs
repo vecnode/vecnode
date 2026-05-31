@@ -242,6 +242,9 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "win11-open-media-processor" => ScriptTarget {
             relative_path: "scripts/win11/open_media_processor.bat",
         },
+        "win11-open-media-processor-dev" => ScriptTarget {
+            relative_path: "scripts/win11/open_media_processor_dev.bat",
+        },
         "win11-check-ollama" => ScriptTarget {
             relative_path: "scripts/win11/check_ollama.bat",
         },

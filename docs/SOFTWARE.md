@@ -115,6 +115,7 @@ When running on Windows hosts, `vn run win11` opens grouped submenus:
 - `vn run win11-open-docs`
 - `vn run win11-open-silverbullet`
 - `vn run win11-open-media-processor`
+- `vn run win11-open-media-processor-dev`
 - `< Back to win11`
 
 ## Controls
