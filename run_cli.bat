@@ -38,16 +38,22 @@ if not defined RUST_HOST (
 	exit /b 1
 )
 
-echo [INFO] Building vn CLI for host target %RUST_HOST%...
-cargo build --manifest-path cli/Cargo.toml -p vn --target "%RUST_HOST%"
-if errorlevel 1 (
-	echo [ERROR] Build failed.
-	popd >nul
-	pause
-	exit /b 1
+set "VN_BIN=.\cli\target\%RUST_HOST%\debug\vn.exe"
+
+tasklist /FI "IMAGENAME eq vn.exe" 2>nul | find /I "vn.exe" >nul
+if not errorlevel 1 (
+	echo [INFO] Detected an existing vn.exe process. Skipping rebuild to avoid file lock.
+) else (
+	echo [INFO] Building vn CLI for host target %RUST_HOST%...
+	cargo build --manifest-path cli/Cargo.toml -p vn --target "%RUST_HOST%"
+	if errorlevel 1 (
+		echo [ERROR] Build failed.
+		popd >nul
+		pause
+		exit /b 1
+	)
 )
 
-set "VN_BIN=.\cli\target\%RUST_HOST%\debug\vn.exe"
 if not exist "%VN_BIN%" (
 	echo [ERROR] Binary not found: %VN_BIN%
 	popd >nul
@@ -56,6 +62,9 @@ if not exist "%VN_BIN%" (
 )
 
 echo [INFO] Launching vn...
+echo [INFO] Starting vecnode tray icon...
+start "vecnode tray" /MIN "%VN_BIN%" tray --repo-root "%~dp0"
+
 "%VN_BIN%" %*
 set "VN_EXIT=%ERRORLEVEL%"
 

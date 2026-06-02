@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod tray;
 mod tui;
 
 use anyhow::Result;
@@ -23,7 +24,14 @@ enum Command {
     Docker(DockerArgs),
     Git(GitArgs),
     Run(RunArgs),
+    Tray(TrayArgs),
     Tui,
+}
+
+#[derive(clap::Args, Debug)]
+struct TrayArgs {
+    #[arg(long)]
+    repo_root: Option<PathBuf>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -104,6 +112,7 @@ async fn main() -> Result<()> {
         Some(Command::Docker(args)) => commands::docker::run(args, &loaded)?,
         Some(Command::Git(args)) => commands::git::run(args)?,
         Some(Command::Run(args)) => commands::run::run(args, &loaded)?,
+        Some(Command::Tray(args)) => tray::run(args.repo_root)?,
         Some(Command::Tui) | None => tui::app::run()?,
     }
 
