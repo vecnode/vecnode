@@ -13,6 +13,9 @@ struct Cli {
     #[arg(long, global = true)]
     config: Option<PathBuf>,
 
+    #[arg(long, global = true, hide = true)]
+    repo_root: Option<PathBuf>,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -24,14 +27,8 @@ enum Command {
     Docker(DockerArgs),
     Git(GitArgs),
     Run(RunArgs),
-    Tray(TrayArgs),
+    Tray,
     Tui,
-}
-
-#[derive(clap::Args, Debug)]
-struct TrayArgs {
-    #[arg(long)]
-    repo_root: Option<PathBuf>,
 }
 
 #[derive(clap::Args, Debug)]
@@ -104,6 +101,7 @@ enum GitSubcommand {
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    let repo_root = cli.repo_root.clone();
     let loaded = config::load_or_init(cli.config)?;
 
     match cli.command {
@@ -112,8 +110,8 @@ async fn main() -> Result<()> {
         Some(Command::Docker(args)) => commands::docker::run(args, &loaded)?,
         Some(Command::Git(args)) => commands::git::run(args)?,
         Some(Command::Run(args)) => commands::run::run(args, &loaded)?,
-        Some(Command::Tray(args)) => tray::run(args.repo_root)?,
-        Some(Command::Tui) | None => tui::app::run()?,
+        Some(Command::Tray) => tray::run(repo_root)?,
+        Some(Command::Tui) | None => tui::app::run(repo_root)?,
     }
 
     Ok(())

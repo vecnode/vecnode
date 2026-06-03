@@ -9,7 +9,6 @@ use std::os::unix::fs::PermissionsExt;
 #[derive(Debug, Clone)]
 pub struct LoadedConfig {
     pub path: PathBuf,
-    #[allow(dead_code)]
     pub config: AppConfig,
 }
 

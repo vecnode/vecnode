@@ -82,6 +82,7 @@ struct AppState {
     menu: MenuKind,
     commands: Vec<CommandItem>,
     selected: usize,
+    repo_root: Option<std::path::PathBuf>,
     logs: Vec<LogEntry>,
     running: Vec<RunningProcess>,
     tx: Sender<ProcEvent>,
@@ -96,13 +97,14 @@ struct AppState {
 }
 
 impl AppState {
-    fn new() -> Self {
+    fn new(repo_root: Option<std::path::PathBuf>) -> Self {
         let (tx, rx) = mpsc::channel::<ProcEvent>();
 
         let mut app = Self {
             menu: MenuKind::Root,
             commands: menu_items(MenuKind::Root),
             selected: 0,
+            repo_root,
             logs: vec![],
             running: Vec::new(),
             tx,
@@ -309,6 +311,12 @@ impl AppState {
         };
 
         let mut cmd = Command::new(exe);
+        if let Some(repo_root) = &self.repo_root {
+            cmd.arg("--repo-root").arg(repo_root);
+            cmd.current_dir(repo_root);
+            cmd.env("VECNODE_REPO_ROOT", repo_root);
+        }
+
         cmd.args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -844,7 +852,12 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
     }
 }
 
-pub fn run() -> Result<()> {
+pub fn run(repo_root: Option<std::path::PathBuf>) -> Result<()> {
+    if let Some(repo_root) = &repo_root {
+        env::set_var("VECNODE_REPO_ROOT", repo_root);
+        env::set_current_dir(repo_root)?;
+    }
+
     let mut stdout = io::stdout();
     enable_raw_mode()?;
     execute!(stdout, EnterAlternateScreen)?;
@@ -852,7 +865,7 @@ pub fn run() -> Result<()> {
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = event_loop(&mut terminal);
+    let result = event_loop(&mut terminal, repo_root);
 
     disable_raw_mode()?;
     io::stdout().execute(LeaveAlternateScreen)?;
@@ -861,8 +874,11 @@ pub fn run() -> Result<()> {
     result
 }
 
-fn event_loop(terminal: &mut Terminal<CrosstermBackend<Stdout>>) -> Result<()> {
-    let mut app = AppState::new();
+fn event_loop(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    repo_root: Option<std::path::PathBuf>,
+) -> Result<()> {
+    let mut app = AppState::new(repo_root);
 
     loop {
         app.pump_process();

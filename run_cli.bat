@@ -39,19 +39,16 @@ if not defined RUST_HOST (
 )
 
 set "VN_BIN=.\cli\target\%RUST_HOST%\debug\vn.exe"
+set "REPO_ROOT=%~dp0"
+if "%REPO_ROOT:~-1%"=="\" set "REPO_ROOT=%REPO_ROOT:~0,-1%"
 
-tasklist /FI "IMAGENAME eq vn.exe" 2>nul | find /I "vn.exe" >nul
-if not errorlevel 1 (
-	echo [INFO] Detected an existing vn.exe process. Skipping rebuild to avoid file lock.
-) else (
-	echo [INFO] Building vn CLI for host target %RUST_HOST%...
-	cargo build --manifest-path cli/Cargo.toml -p vn --target "%RUST_HOST%"
-	if errorlevel 1 (
-		echo [ERROR] Build failed.
-		popd >nul
-		pause
-		exit /b 1
-	)
+echo [INFO] Building vn CLI for host target %RUST_HOST%...
+cargo build --manifest-path cli/Cargo.toml -p vn --target "%RUST_HOST%"
+if errorlevel 1 (
+	echo [ERROR] Build failed.
+	popd >nul
+	pause
+	exit /b 1
 )
 
 if not exist "%VN_BIN%" (
@@ -63,9 +60,16 @@ if not exist "%VN_BIN%" (
 
 echo [INFO] Launching vn...
 echo [INFO] Starting vecnode tray icon...
-start "vecnode tray" /MIN "%VN_BIN%" tray --repo-root "%~dp0"
+set "TRAY_BIN=%TEMP%\vecnode-vn-tray-%RUST_HOST%.exe"
+copy /Y "%VN_BIN%" "%TRAY_BIN%" >nul 2>nul
+if errorlevel 1 (
+	echo [WARNING] Could not prepare tray binary copy. Falling back to main executable.
+	start "vecnode tray" /MIN "%VN_BIN%" --repo-root "%REPO_ROOT%" tray
+) else (
+	start "vecnode tray" /MIN "%TRAY_BIN%" --repo-root "%REPO_ROOT%" tray
+)
 
-"%VN_BIN%" %*
+"%VN_BIN%" --repo-root "%REPO_ROOT%" %*
 set "VN_EXIT=%ERRORLEVEL%"
 
 popd >nul

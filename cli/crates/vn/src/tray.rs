@@ -66,7 +66,11 @@ mod windows {
             let vn_bin = vn_bin.clone();
             let repo_root = repo_root.clone();
             tray.add_menu_item("Open Admin TUI Terminal", move || {
-                let _ = open_admin_tui_terminal(&vn_bin, &repo_root);
+                if let Err(err) = open_admin_tui_terminal(&vn_bin, &repo_root) {
+                    eprintln!("failed to open admin TUI terminal: {err:#}");
+                    let message = format!("Failed to open administrator TUI terminal.\n\n{err:#}");
+                    show_error_message(&message);
+                }
             })
             .context("failed to add tray menu item: Open Admin TUI Terminal")?;
         }
@@ -162,7 +166,7 @@ mod windows {
         let cwd = repo_root
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("invalid repo root path"))?;
-        let cwd = cwd.trim_end_matches(['\\', '/']);
+        let cwd = cwd.trim_end_matches(['\\', '/', '"']);
         let vn = vn_bin
             .canonicalize()
             .with_context(|| format!("failed to resolve vn path: {}", vn_bin.display()))?;
@@ -170,45 +174,9 @@ mod windows {
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("invalid vn executable path"))?;
 
-        let temp_cmd = std::env::temp_dir().join("vecnode-open-admin-tui.cmd");
-        let temp_log = std::env::temp_dir().join("vecnode-open-admin-tui.log");
-        let mut script = File::create(&temp_cmd)
-            .with_context(|| format!("failed to create temp launcher: {}", temp_cmd.display()))?;
-
-        writeln!(script, "@echo off")?;
-        writeln!(script, "setlocal EnableExtensions")?;
-        writeln!(script, "set \"VECNODE_LOG={}\"", temp_log.display())?;
-        writeln!(script, "echo [vecnode] admin launcher starting > \"%VECNODE_LOG%\"")?;
-        writeln!(script, "set \"VECNODE_REPO_ROOT={}\"", cwd)?;
-        writeln!(script, "echo [vecnode] repo_root=%VECNODE_REPO_ROOT% >> \"%VECNODE_LOG%\"")?;
-        writeln!(script, "echo [vecnode] vn={} >> \"%VECNODE_LOG%\"", vn)?;
-        writeln!(script, "if not exist \"%VECNODE_REPO_ROOT%\" (")?;
-        writeln!(script, "  echo [vecnode] ERROR: repo_root does not exist >> \"%VECNODE_LOG%\"")?;
-        writeln!(script, "  pause")?;
-        writeln!(script, "  exit /b 1")?;
-        writeln!(script, ")")?;
-        writeln!(script, "if not exist \"{}\" (", vn)?;
-        writeln!(script, "  echo [vecnode] ERROR: vn.exe does not exist >> \"%VECNODE_LOG%\"")?;
-        writeln!(script, "  pause")?;
-        writeln!(script, "  exit /b 1")?;
-        writeln!(script, ")")?;
-        writeln!(script, "pushd \"{}\"", cwd)?;
-        writeln!(script, "echo [vecnode] launching TUI... >> \"%VECNODE_LOG%\"")?;
-        writeln!(script, "call \"{}\" >> \"%VECNODE_LOG%\" 2>&1", vn)?;
-        writeln!(script, "echo [vecnode] vecnode exited with code %ERRORLEVEL% >> \"%VECNODE_LOG%\"")?;
-        writeln!(script, "type \"%VECNODE_LOG%\"")?;
-        writeln!(script, "pause")?;
-        writeln!(script, "popd")?;
-        script.flush()?;
-        drop(script);
-
         let operation_w = to_wide("runas");
-        let file_w = to_wide(
-            temp_cmd
-                .to_str()
-                .ok_or_else(|| anyhow::anyhow!("invalid temp launcher path"))?,
-        );
-        let params_w = to_wide("");
+        let file_w = to_wide(vn);
+        let params_w = to_wide(&format!("--repo-root \"{}\"", cwd));
         let cwd_w = to_wide(cwd);
 
         let result = unsafe {
@@ -216,11 +184,6 @@ mod windows {
         };
 
         if result <= 32 {
-            let title = to_wide("vecnode");
-            let message = to_wide("Failed to open the administrator TUI terminal.");
-            unsafe {
-                MessageBoxW(0, message.as_ptr(), title.as_ptr(), MB_OK | MB_ICONERROR);
-            }
             anyhow::bail!(
                 "failed to open elevated TUI terminal (ShellExecuteW code: {})",
                 result
@@ -229,6 +192,15 @@ mod windows {
 
         Ok(())
     }
+
+    fn show_error_message(message: &str) {
+        let title = to_wide("vecnode");
+        let message = to_wide(message);
+        unsafe {
+            MessageBoxW(0, message.as_ptr(), title.as_ptr(), MB_OK | MB_ICONERROR);
+        }
+    }
+
     fn resolve_repo_root(repo_root: Option<PathBuf>) -> Result<PathBuf> {
         if let Some(path) = repo_root {
             return Ok(path);
