@@ -230,6 +230,47 @@ if ($isAdmin) {
 }
 
 # ---------------------------------------------------------------------------
+# Block OneDrive from syncing and starting setup
+# DisableFileSyncNGSC is the official "Prevent the usage of OneDrive for file
+# storage" policy — OneDrive won't start, sync, or integrate with Explorer.
+# DisableLibrariesDefaultSaveToOneDrive stops Windows from defaulting saves to
+# OneDrive. DisableAutoConfig blocks silent sign-in during setup prompts.
+# HKCU keys hide OneDrive from Explorer and remove the startup Run entry.
+# Requires Administrator rights for HKLM policies (HKCU parts apply either way).
+# ---------------------------------------------------------------------------
+$oneDrivePolicyPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\OneDrive"
+$oneDriveSyncPolicyPath = "HKLM:\SOFTWARE\Policies\Microsoft\OneDrive"
+if ($isAdmin) {
+    if (!(Test-Path $oneDrivePolicyPath)) {
+        New-Item -Path $oneDrivePolicyPath -Force | Out-Null
+    }
+    Set-ItemProperty -Path $oneDrivePolicyPath -Name "DisableFileSyncNGSC" -Value 1 -Type DWord
+    Set-ItemProperty -Path $oneDrivePolicyPath -Name "DisableLibrariesDefaultSaveToOneDrive" -Value 1 -Type DWord
+
+    if (!(Test-Path $oneDriveSyncPolicyPath)) {
+        New-Item -Path $oneDriveSyncPolicyPath -Force | Out-Null
+    }
+    Set-ItemProperty -Path $oneDriveSyncPolicyPath -Name "DisableAutoConfig" -Value 1 -Type DWord
+
+    Get-Process -Name "OneDrive" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Write-Host "[INFO] Blocked OneDrive sync (DisableFileSyncNGSC, default-save, auto-config)."
+} else {
+    Write-Host "[WARNING] Skipped OneDrive sync block - requires Administrator rights. Re-run as admin to apply."
+}
+
+$oneDriveNamespacePath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Desktop\NameSpace\{018D5C66-4533-4307-9B53-224DE2ED1FE6}"
+if (!(Test-Path $oneDriveNamespacePath)) {
+    New-Item -Path $oneDriveNamespacePath -Force | Out-Null
+}
+Set-ItemProperty -Path $oneDriveNamespacePath -Name "System.IsPinnedToNameSpaceTree" -Value 0 -Type DWord
+
+$runPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
+if (Get-ItemProperty -Path $runPath -Name "OneDrive" -ErrorAction SilentlyContinue) {
+    Remove-ItemProperty -Path $runPath -Name "OneDrive" -ErrorAction SilentlyContinue
+}
+Write-Host "[INFO] Hidden OneDrive from Explorer and removed startup entry."
+
+# ---------------------------------------------------------------------------
 # Never sleep, never turn off monitor
 # Sets sleep and monitor timeouts to 0 (never) for both AC and battery power.
 # Requires Administrator rights (powercfg writes power scheme settings).
