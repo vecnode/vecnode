@@ -122,8 +122,12 @@ impl AppState {
             },
         };
 
-        app.refresh_docker_panel();
+        app.refresh_ui();
         app
+    }
+
+    fn refresh_ui(&mut self) {
+        self.refresh_docker_panel();
     }
 
     fn refresh_docker_panel(&mut self) {
@@ -913,7 +917,8 @@ fn event_loop(
                         app.output_page_down();
                     }
                     KeyCode::Char('r') | KeyCode::Char('R') => {
-                        app.refresh_docker_panel();
+                        app.refresh_ui();
+                        terminal.clear()?;
                     }
                     KeyCode::Enter => {
                         if matches!(app.focus, Focus::Dashboard) {
@@ -934,7 +939,10 @@ fn event_loop(
                     }
                     _ => {}
                 },
-                Event::Resize(_, _) | Event::FocusGained | Event::FocusLost => {}
+                Event::Resize(_, _) => {
+                    terminal.clear()?;
+                }
+                Event::FocusGained | Event::FocusLost => {}
                 _ => {}
             }
         }
@@ -1035,10 +1043,10 @@ fn event_loop(
 
             let keys_text = match app.focus {
                 Focus::Dashboard => {
-                    "Tab: input  Up/Down: select  Enter: run  R: refresh docker  ,/.: output page  q/Esc: exit"
+                    "Tab: input  Up/Down: select  Enter: run  R: refresh ui  ,/.: output page  q/Esc: exit"
                 }
                 Focus::Input => {
-                    "Tab: dashboard  Enter: send input  Backspace: delete  R: refresh docker  ,/.: output page  q/Esc: exit"
+                    "Tab: dashboard  Enter: send input  Backspace: delete  R: refresh ui  ,/.: output page  q/Esc: exit"
                 }
             };
 
