@@ -362,6 +362,80 @@ if ($isAdmin) {
     Write-Host "[WARNING] Skipped long paths setting - requires Administrator rights. Re-run as admin to apply."
 }
 
+# ---------------------------------------------------------------------------
+# Disable scheduled Windows license validation tasks
+# Windows uses Task Scheduler to re-check activation on a timer, at logon,
+# and when network connectivity changes. Disabling these tasks stops those
+# automatic re-validation cycles. Task state persists across reboots.
+# Tradeoff: digital/KMS licenses may not renew automatically; activate once
+# manually (Settings > Activation or slmgr /ato) before relying on this.
+# Requires Administrator rights.
+# ---------------------------------------------------------------------------
+if ($isAdmin) {
+    $licenseScheduledTasks = @(
+        @{ Path = '\Microsoft\Windows\License Manager\'; Name = 'TempSignedLicenseExchange' },
+        @{ Path = '\Microsoft\Windows\Clip\'; Name = 'License Validation' },
+        @{ Path = '\Microsoft\Windows\Subscription\'; Name = 'EnableLicenseAcquisition' },
+        @{ Path = '\Microsoft\Windows\Subscription\'; Name = 'LicenseAcquisition' },
+        @{ Path = '\Microsoft\Windows\SoftwareProtectionPlatform\'; Name = 'SvcRestartTask' },
+        @{ Path = '\Microsoft\Windows\SoftwareProtectionPlatform\'; Name = 'SvcRestartTaskLogon' },
+        @{ Path = '\Microsoft\Windows\SoftwareProtectionPlatform\'; Name = 'SvcRestartTaskNetwork' }
+    )
+
+    foreach ($task in $licenseScheduledTasks) {
+        $existing = Get-ScheduledTask -TaskPath $task.Path -TaskName $task.Name -ErrorAction SilentlyContinue
+        if ($null -eq $existing) {
+            continue
+        }
+        if ($existing.State -ne 'Disabled') {
+            Disable-ScheduledTask -TaskPath $task.Path -TaskName $task.Name -ErrorAction SilentlyContinue | Out-Null
+            Write-Host "[INFO] Disabled scheduled task: $($task.Path)$($task.Name)"
+        }
+    }
+    Write-Host "[INFO] License validation scheduled tasks disabled (persists across reboot)."
+} else {
+    Write-Host "[WARNING] Skipped license scheduled-task disable - requires Administrator rights. Re-run as admin to apply."
+}
+
+# ---------------------------------------------------------------------------
+# Block network-dependent Windows activation checks
+# sppsvc (Software Protection Platform) phones home to Microsoft for online
+# validation and KMS renewal. An outbound firewall rule for sppsvc.exe blocks
+# those checks while leaving local license state untouched. Windows Firewall
+# rules persist across reboots. sppsvc is set to Manual so it is not restarted
+# automatically at boot by the service control manager alone.
+# Tradeoff: online re-activation and KMS renewal will fail until this block
+# is removed. Pair with the scheduled-task section above for full effect.
+# Requires Administrator rights.
+# ---------------------------------------------------------------------------
+if ($isAdmin) {
+    $sppServiceName = 'sppsvc'
+    $sppProgramPath = Join-Path $env:SystemRoot 'System32\sppsvc.exe'
+    $firewallRuleName = 'vecnode-block-sppsvc-outbound'
+
+    $existingRule = Get-NetFirewallRule -DisplayName $firewallRuleName -ErrorAction SilentlyContinue
+    if ($null -eq $existingRule) {
+        New-NetFirewallRule `
+            -DisplayName $firewallRuleName `
+            -Description 'Block Software Protection Platform outbound activation traffic (vecnode dotfiles)' `
+            -Direction Outbound `
+            -Program $sppProgramPath `
+            -Action Block `
+            -Enabled True `
+            -ErrorAction SilentlyContinue | Out-Null
+        Write-Host "[INFO] Created outbound firewall block for sppsvc.exe."
+    } else {
+        Set-NetFirewallRule -DisplayName $firewallRuleName -Enabled True -Action Block -ErrorAction SilentlyContinue | Out-Null
+        Write-Host "[INFO] Outbound firewall block for sppsvc.exe already present (re-enabled)."
+    }
+
+    Set-Service -Name $sppServiceName -StartupType Manual -ErrorAction SilentlyContinue
+    Stop-Service -Name $sppServiceName -Force -ErrorAction SilentlyContinue
+    Write-Host "[INFO] Blocked network-dependent activation checks (firewall + sppsvc Manual)."
+} else {
+    Write-Host "[WARNING] Skipped activation network block - requires Administrator rights. Re-run as admin to apply."
+}
+
 # vecnode 2026
 
 
