@@ -1,7 +1,7 @@
 # vecnode Rust CLI - Security Policy
 
 **Last Updated:** May 14, 2026  
-**Version:** 0.1
+**Version:** 0.1.0
 
 This document outlines the security practices, deployment guidelines, and threat model for the vecnode Rust CLI. It is designed to be safe for deployment on fresh, untrusted machines while remaining lightweight and user-friendly for development workflows.
 

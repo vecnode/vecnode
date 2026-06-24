@@ -26,6 +26,7 @@ enum Command {
     Sys(SysArgs),
     Docker(DockerArgs),
     Git(GitArgs),
+    Net(NetArgs),
     Run(RunArgs),
     Tray,
     Tui,
@@ -57,6 +58,21 @@ struct AiArgs {
 #[derive(clap::Args, Debug)]
 struct RunArgs {
     name: String,
+}
+
+#[derive(clap::Args, Debug)]
+struct NetArgs {
+    #[command(subcommand)]
+    command: Option<NetSubcommand>,
+}
+
+#[derive(Subcommand, Debug)]
+enum NetSubcommand {
+    /// Scan open ports with RustScan. Defaults to the local /24 subnet.
+    Scan {
+        /// Target to scan: IP, CIDR, or hostname. Defaults to the local /24 subnet.
+        target: Option<String>,
+    },
 }
 
 #[derive(clap::Args, Debug)]
@@ -109,6 +125,7 @@ async fn main() -> Result<()> {
         Some(Command::Sys(args)) => commands::sys::run(args)?,
         Some(Command::Docker(args)) => commands::docker::run(args, &loaded)?,
         Some(Command::Git(args)) => commands::git::run(args)?,
+        Some(Command::Net(args)) => commands::net::run(args)?,
         Some(Command::Run(args)) => commands::run::run(args, &loaded)?,
         Some(Command::Tray) => tray::run(repo_root)?,
         Some(Command::Tui) | None => tui::app::run(repo_root)?,

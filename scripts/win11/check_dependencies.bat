@@ -3,7 +3,7 @@ REM ---------------------------------------------------------------------------
 REM check_dependencies.bat
 REM Comprehensive dependency checker and installer for vecnode CLI.
 REM
-REM Checks for: git, curl, jq, docker, winget
+REM Checks for: git, curl, jq, docker, winget, rustscan
 REM Offers automatic installation if any are missing.
 REM
 REM Usage:
@@ -14,7 +14,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 
 REM Initialize variables
-set "DEPENDENCIES=git curl jq docker winget"
+set "DEPENDENCIES=git curl jq docker winget rustscan"
 set /a MISSING_COUNT=0
 set "MISSING_LIST="
 
@@ -60,6 +60,9 @@ for %%D in (%DEPENDENCIES%) do (
         ) else if "!DEP!"=="winget" (
             for /f "tokens=*" %%V in ('winget --version 2^>nul') do set "VERSION=%%V"
             echo   [OK] winget !VERSION!
+        ) else if "!DEP!"=="rustscan" (
+            for /f "tokens=*" %%V in ('rustscan --version 2^>nul') do set "VERSION=%%V"
+            echo   [OK] !VERSION!
         )
     ) else (
         echo   [MISSING]
@@ -158,6 +161,14 @@ if !errorlevel! equ 0 (
             ) else (
                 echo [WARNING] Docker installation may require manual steps
             )
+        ) else if "%%M"=="rustscan" (
+            echo [INFO] Installing rustscan via cargo...
+            cargo install rustscan >nul 2>nul
+            if !errorlevel! equ 0 (
+                echo [OK] rustscan installed
+            ) else (
+                echo [WARNING] rustscan install failed ^(requires Rust/cargo: https://rustup.rs/^)
+            )
         ) else (
             echo [INFO] Installing %%M...
             winget install -e --id %%M --accept-package-agreements --accept-source-agreements >nul 2>nul
@@ -183,6 +194,8 @@ if !errorlevel! equ 0 (
             echo   - jq: https://stedolan.github.io/jq/download/
         ) else if "%%M"=="winget" (
             echo   - winget (App Installer): https://aka.ms/getwinget
+        ) else if "%%M"=="rustscan" (
+            echo   - rustscan: cargo install rustscan (install Rust from https://rustup.rs/)
         )
     )
     exit /b 1
@@ -218,6 +231,9 @@ for %%M in (!MISSING_LIST!) do (
         ) else if "!DEP!"=="winget" (
             for /f "tokens=*" %%V in ('winget --version 2^>nul') do set "VERSION=%%V"
             echo   Verifying !DEP!... [OK] winget !VERSION!
+        ) else if "!DEP!"=="rustscan" (
+            for /f "tokens=*" %%V in ('rustscan --version 2^>nul') do set "VERSION=%%V"
+            echo   Verifying !DEP!... [OK] !VERSION!
         )
     ) else (
         echo   Verifying !DEP!... [FAILED]

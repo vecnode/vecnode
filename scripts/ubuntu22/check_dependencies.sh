@@ -5,7 +5,7 @@ set -euo pipefail
 # check_dependencies.sh
 # Comprehensive dependency checker and installer for vecnode CLI.
 #
-# Checks for: git, curl, jq, docker
+# Checks for: git, curl, jq, docker, rustscan
 # Offers automatic installation if any are missing.
 #
 # Usage:
@@ -13,7 +13,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 
 # Initialize variables
-DEPENDENCIES=("git" "curl" "jq" "docker")
+DEPENDENCIES=("git" "curl" "jq" "docker" "rustscan")
 declare -A STATUS
 declare -a MISSING=()
 
@@ -54,6 +54,11 @@ for dep in "${DEPENDENCIES[@]}"; do
           echo "[WARNING] Found but not accessible (daemon may not be running)"
           STATUS["$dep"]="WARNING"
         fi
+        ;;
+      rustscan)
+        VERSION=$("$dep" --version 2>/dev/null | head -n1)
+        echo "[OK] ($VERSION)"
+        STATUS["$dep"]="OK"
         ;;
     esac
   else
@@ -125,6 +130,14 @@ if command -v apt-get &>/dev/null; then
         sudo apt-get install -y docker.io >/dev/null 2>&1
         echo "[OK] docker.io installed"
         ;;
+      rustscan)
+        echo "[INFO] Installing rustscan via cargo..."
+        if command -v cargo &>/dev/null && cargo install rustscan >/dev/null 2>&1; then
+          echo "[OK] rustscan installed"
+        else
+          echo "[WARNING] rustscan install failed (requires Rust/cargo: https://rustup.rs/)"
+        fi
+        ;;
       *)
         echo "[INFO] Installing $dep..."
         sudo apt-get install -y "$dep" >/dev/null 2>&1
@@ -145,6 +158,14 @@ elif command -v yum &>/dev/null; then
         sudo yum install -y docker >/dev/null 2>&1
         echo "[OK] docker installed"
         ;;
+      rustscan)
+        echo "[INFO] Installing rustscan via cargo..."
+        if command -v cargo &>/dev/null && cargo install rustscan >/dev/null 2>&1; then
+          echo "[OK] rustscan installed"
+        else
+          echo "[WARNING] rustscan install failed (requires Rust/cargo: https://rustup.rs/)"
+        fi
+        ;;
       *)
         echo "[INFO] Installing $dep..."
         sudo yum install -y "$dep" >/dev/null 2>&1
@@ -160,6 +181,9 @@ else
     case "$dep" in
       docker)
         echo "  docker: https://docs.docker.com/engine/install/"
+        ;;
+      rustscan)
+        echo "  rustscan: cargo install rustscan (install Rust from https://rustup.rs/)"
         ;;
       *)
         echo "  $dep: Search for '${dep} install' for your Linux distribution"
@@ -199,6 +223,10 @@ for dep in "${MISSING[@]}"; do
         else
           echo "[WARNING] Installed but daemon may need to be started"
         fi
+        ;;
+      rustscan)
+        VERSION=$("$dep" --version 2>/dev/null | head -n1)
+        echo "[OK] ($VERSION)"
         ;;
     esac
   else

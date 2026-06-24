@@ -58,6 +58,18 @@ if not exist "%VN_BIN%" (
 	exit /b 1
 )
 
+REM RustScan powers "vn net scan" (open-port scanning). Install it once via
+REM cargo if it is not already on PATH; failure is non-fatal so the CLI still
+REM launches.
+where rustscan >nul 2>nul
+if errorlevel 1 (
+	echo [INFO] rustscan not found. Installing via cargo ^(one-time^)...
+	cargo install rustscan
+	if errorlevel 1 (
+		echo [WARNING] Failed to install rustscan. "vn net scan" will not work until it is installed.
+	)
+)
+
 echo [INFO] Launching vn...
 echo [INFO] Starting vecnode tray icon...
 set "TRAY_BIN=%TEMP%\vecnode-vn-tray-%RUST_HOST%.exe"

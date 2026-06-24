@@ -37,9 +37,6 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "ubuntu22" => ScriptTarget {
             relative_path: "scripts/ubuntu22/main.sh",
         },
-        "ubuntu22-check-local-network" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/check_local_network.sh",
-        },
         "ubuntu22-check-internet" => ScriptTarget {
             relative_path: "scripts/ubuntu22/check_internet.sh",
         },
@@ -104,13 +101,6 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
                 "scripts/ubuntu22/check_dependencies.sh"
             } else {
                 "scripts/win11/check_dependencies.bat"
-            },
-        },
-        "check-local-network" => ScriptTarget {
-            relative_path: if is_linux {
-                "scripts/ubuntu22/check_local_network.sh"
-            } else {
-                "scripts/win11/check_local_network.bat"
             },
         },
         "check-docker" => ScriptTarget {
@@ -205,9 +195,6 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         },
         "win11-check-internet" => ScriptTarget {
             relative_path: "scripts/win11/check_internet.bat",
-        },
-        "win11-check-local-network" => ScriptTarget {
-            relative_path: "scripts/win11/check_local_network.bat",
         },
         "win11-check-dependencies" => ScriptTarget {
             relative_path: "scripts/win11/check_dependencies.bat",

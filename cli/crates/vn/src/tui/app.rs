@@ -623,8 +623,8 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
         ],
         MenuKind::RunUbuntu22Network => vec![
             CommandItem {
-                label: "vn run ubuntu22-check-local-network",
-                action: Action::Execute(vec!["run", "ubuntu22-check-local-network"]),
+                label: "vn net scan (rustscan open ports, local /24)",
+                action: Action::Execute(vec!["net", "scan"]),
             },
             CommandItem {
                 label: "vn run ubuntu22-check-internet",
@@ -753,8 +753,8 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "win11-check-peripherals"]),
             },
             CommandItem {
-                label: "vn run win11-check-local-network",
-                action: Action::Execute(vec!["run", "win11-check-local-network"]),
+                label: "vn net scan (rustscan open ports, local /24)",
+                action: Action::Execute(vec!["net", "scan"]),
             },
             CommandItem {
                 label: "vn run win11-check-internet",
