@@ -65,8 +65,21 @@ mod windows {
         {
             let vn_bin = vn_bin.clone();
             let repo_root = repo_root.clone();
+            tray.add_menu_item("Open TUI Terminal", move || {
+                if let Err(err) = open_tui_terminal(&vn_bin, &repo_root, false) {
+                    eprintln!("failed to open TUI terminal: {err:#}");
+                    let message = format!("Failed to open TUI terminal.\n\n{err:#}");
+                    show_error_message(&message);
+                }
+            })
+            .context("failed to add tray menu item: Open TUI Terminal")?;
+        }
+
+        {
+            let vn_bin = vn_bin.clone();
+            let repo_root = repo_root.clone();
             tray.add_menu_item("Open Admin TUI Terminal", move || {
-                if let Err(err) = open_admin_tui_terminal(&vn_bin, &repo_root) {
+                if let Err(err) = open_tui_terminal(&vn_bin, &repo_root, true) {
                     eprintln!("failed to open admin TUI terminal: {err:#}");
                     let message = format!("Failed to open administrator TUI terminal.\n\n{err:#}");
                     show_error_message(&message);
@@ -162,7 +175,13 @@ mod windows {
         system.process(Pid::from_u32(pid)).is_some()
     }
 
-    fn open_admin_tui_terminal(vn_bin: &Path, repo_root: &Path) -> Result<()> {
+    /// Open a new TUI terminal window. When `elevated` is true the window is
+    /// launched with a UAC prompt ("runas") for commands that require admin
+    /// rights (e.g. some Docker / media-processor workflows); otherwise it
+    /// opens at the tray's own (normally non-admin) privilege level. This lets
+    /// run_cli.bat be launched without administrator rights and only elevate
+    /// when a specific command needs it.
+    fn open_tui_terminal(vn_bin: &Path, repo_root: &Path, elevated: bool) -> Result<()> {
         let cwd = repo_root
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("invalid repo root path"))?;
@@ -174,7 +193,8 @@ mod windows {
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("invalid vn executable path"))?;
 
-        let operation_w = to_wide("runas");
+        let operation = if elevated { "runas" } else { "open" };
+        let operation_w = to_wide(operation);
         let file_w = to_wide(vn);
         let params_w = to_wide(&format!("--repo-root \"{}\"", cwd));
         let cwd_w = to_wide(cwd);
@@ -185,7 +205,8 @@ mod windows {
 
         if result <= 32 {
             anyhow::bail!(
-                "failed to open elevated TUI terminal (ShellExecuteW code: {})",
+                "failed to open {} TUI terminal (ShellExecuteW code: {})",
+                if elevated { "elevated" } else { "normal" },
                 result
             );
         }

@@ -25,13 +25,19 @@ implemented natively in Rust instead.
 
 On Windows the intended flow is:
 
-1. Double-click **`run_cli.bat`** (as Administrator). It unblocks the scripts, builds
-   `vn`, installs `rustscan` if missing, then launches a **tray agent** (`vn tray`,
-   minimized/hidden) and a first TUI.
-2. The tray agent runs persistently as a shield icon. Its menu has **"Open Admin TUI
-   Terminal"** (re-launches `vn` elevated via `ShellExecuteW "runas"`) and **"Quit"**.
+1. Double-click **`run_cli.bat`** — **no administrator rights required**. It unblocks the
+   scripts, builds `vn`, installs `rustscan` if missing, then launches a **tray agent**
+   (`vn tray`, minimized/hidden) and a first (non-elevated) TUI.
+2. The tray agent runs persistently as a shield icon. Its menu has **"Open TUI Terminal"**
+   (normal, same privilege as the tray — the default), **"Open Admin TUI Terminal"**
+   (re-launches `vn` elevated via `ShellExecuteW "runas"`, triggering a UAC prompt), and
+   **"Quit"**.
 3. You open as many TUIs as you want from the tray; closing them leaves the tray
    running. Quitting from the tray exits everything.
+
+Run everyday tasks from a normal (non-admin) TUI. Only use **"Open Admin TUI Terminal"**
+for commands that actually need elevation (e.g. some Docker / media-processor workflows);
+that way `run_cli.bat` never has to be launched as Administrator.
 
 A single-instance lock (`%TEMP%\vecnode.vn.tray.lock`) keeps only one tray alive.
 Linux has no tray; use `./run_cli.sh` to build and launch the TUI directly.
