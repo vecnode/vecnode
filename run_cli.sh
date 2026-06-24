@@ -43,6 +43,15 @@ if [[ ! -x "$VN_BIN" ]]; then
   exit 1
 fi
 
+# RustScan powers 'vn net scan' (open-port scanning). Install it once via cargo
+# if it is not already on PATH; failure is non-fatal so the CLI still launches.
+if ! command -v rustscan >/dev/null 2>&1; then
+  echo "[INFO] rustscan not found. Installing via cargo (one-time)..."
+  if ! cargo install rustscan; then
+    echo "[WARNING] Failed to install rustscan. 'vn net scan' will not work until it is installed."
+  fi
+fi
+
 echo "[INFO] Launching vn..."
 set +e
 "$VN_BIN" "$@"

@@ -24,6 +24,7 @@ bash /app/scripts/tools-cli/alpine/main.sh
 - git
 - jq
 - docker
+- rustscan (open-port scanning; `cargo install rustscan`)
 
 Docker Alpine Dependencies
 
