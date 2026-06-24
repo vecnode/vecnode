@@ -57,7 +57,8 @@ cli/                       Cargo workspace
       tui/app.rs           The whole TUI: menu tree, process spawning, log/docker panels
       commands/
         mod.rs             Module list
-        ai.rs / ollama/    Local Ollama chat
+        ai.rs              vn ai status|models|pull|chat (Ollama via the ollama-rs crate)
+        ollama/session.rs  Chat session persistence (per-session message history)
         sys.rs             vn sys info|update|clean (uses sysinfo)
         docker.rs          vn docker ps|up|down|prune
         git.rs             vn git sync|status
@@ -117,6 +118,27 @@ and scans the whole subnet, which is far faster than the old ping-sweep scanner 
 replaced. `--greppable` keeps it self-contained (no nmap hand-off required). RustScan is
 a standalone binary, **not** a linkable crate; the launchers and `check_dependencies`
 scripts install it with `cargo install rustscan`.
+
+## AI / Ollama
+
+`vn ai` talks to a local [Ollama](https://ollama.com) server through the
+[`ollama-rs`](https://crates.io/crates/ollama-rs) crate (a normal Cargo dependency, so
+it is compiled in automatically — no separate install like RustScan). Subcommands:
+
+- `vn ai status` — is the Ollama server reachable?
+- `vn ai models` — list installed model names (one per line; used by the TUI).
+- `vn ai pull <name>` — download a model (e.g. `llama3.2`).
+- `vn ai chat "<message>" [--model m] [--session s]` — send a message; context is kept
+  per session via [ollama/session.rs](cli/crates/vn/src/ollama/session.rs) so turns
+  build on each other across invocations.
+
+In the TUI's AI submenu (win11-ai / ubuntu22-ai): **Select Model** opens a dynamic menu
+listing installed models (the TUI shells out to `vn ai models` and builds rows from the
+output; the chosen model shows in the header and is passed as `--model`); **Download
+Model** and **Chat** arm the input box (see `InputPurpose`) so the next typed line is
+routed to `vn ai pull` / `vn ai chat`. Output streams into the CLI Output panel and the
+session log file like any other command. The Ollama *server* itself still needs to be
+installed/running — that is what the `check-ollama` / `open-ollama` scripts handle.
 
 ## Conventions
 

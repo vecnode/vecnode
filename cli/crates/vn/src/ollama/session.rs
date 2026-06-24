@@ -79,23 +79,6 @@ impl SessionFile {
             ts_utc: Utc::now().to_rfc3339(),
         });
     }
-
-    pub fn to_prompt(&self, system: Option<&str>) -> String {
-        let mut out = String::new();
-
-        if let Some(system_prompt) = system {
-            out.push_str("System:\n");
-            out.push_str(system_prompt);
-            out.push_str("\n\n");
-        }
-
-        for msg in &self.messages {
-            out.push_str(&format!("{}:\n{}\n\n", titlecase_role(&msg.role), msg.content));
-        }
-
-        out.push_str("Assistant:\n");
-        out
-    }
 }
 
 pub fn session_path(base_dir: &Path, session_name: &str) -> PathBuf {
@@ -111,15 +94,4 @@ pub fn session_path(base_dir: &Path, session_name: &str) -> PathBuf {
         .collect::<String>();
 
     base_dir.join(format!("{}.json", sanitized))
-}
-
-fn titlecase_role(role: &str) -> String {
-    let mut chars = role.chars();
-    if let Some(first) = chars.next() {
-        let mut out = first.to_uppercase().to_string();
-        out.push_str(chars.as_str());
-        out
-    } else {
-        "Unknown".to_string()
-    }
 }

@@ -19,7 +19,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum MenuKind {
     Root,
     RunUbuntu22,
@@ -37,6 +37,15 @@ enum MenuKind {
     RunWin11Open,
     RunWin11Ai,
     RunWin11Dotfiles,
+    SelectModel,
+}
+
+/// What a typed line in the input box should do when submitted.
+#[derive(Clone, Copy, PartialEq)]
+enum InputPurpose {
+    None,
+    DownloadModel,
+    Chat,
 }
 
 #[derive(Clone)]
@@ -44,6 +53,10 @@ enum Action {
     Execute(Vec<&'static str>),
     OpenMenu(MenuKind),
     BackToRoot,
+    /// Query Ollama for installed models and open the model-selection menu.
+    OpenModelMenu,
+    /// Focus the input box and route the next submitted line to this purpose.
+    ArmInput(InputPurpose),
 }
 
 #[derive(Clone)]
@@ -98,6 +111,9 @@ struct AppState {
     last_log_count: usize,
     docker_panel: DockerPanelData,
     log_file: Option<std::fs::File>,
+    selected_model: Option<String>,
+    model_items: Vec<String>,
+    input_purpose: InputPurpose,
 }
 
 impl AppState {
@@ -127,6 +143,9 @@ impl AppState {
                 ports: Vec::new(),
             },
             log_file,
+            selected_model: None,
+            model_items: Vec::new(),
+            input_purpose: InputPurpose::None,
         };
 
         app.refresh_ui();
@@ -282,23 +301,107 @@ impl AppState {
 
     fn set_menu(&mut self, menu: MenuKind) {
         self.menu = menu;
-        self.commands = menu_items(menu);
+        // The model-selection menu is built dynamically from `model_items`;
+        // every other menu uses the static menu tree.
+        self.commands = if menu == MenuKind::SelectModel {
+            Vec::new()
+        } else {
+            menu_items(menu)
+        };
         self.selected = 0;
     }
 
+    /// Number of selectable rows in the current menu. The model menu shows at
+    /// least one row (a placeholder when no models are installed).
+    fn item_count(&self) -> usize {
+        if self.menu == MenuKind::SelectModel {
+            self.model_items.len().max(1)
+        } else {
+            self.commands.len()
+        }
+    }
+
+    /// The AI submenu to return to after the model menu, per host OS.
+    fn ai_back_menu(&self) -> MenuKind {
+        if cfg!(windows) {
+            MenuKind::RunWin11Ai
+        } else {
+            MenuKind::RunUbuntu22Ai
+        }
+    }
+
+    /// Run `vn ai models` and load the printed model names into `model_items`.
+    /// Blocks briefly; if Ollama is down the command fails fast and the list
+    /// stays empty.
+    fn load_models_into_menu(&mut self) {
+        self.model_items.clear();
+
+        let exe = match env::current_exe() {
+            Ok(path) => path,
+            Err(_) => return,
+        };
+
+        let mut cmd = Command::new(exe);
+        if let Some(repo_root) = &self.repo_root {
+            cmd.arg("--repo-root").arg(repo_root);
+        }
+        cmd.args(["ai", "models"]).stdin(Stdio::null());
+
+        if let Ok(output) = cmd.output() {
+            let text = String::from_utf8_lossy(&output.stdout);
+            for line in text.lines() {
+                let name = line.trim();
+                if !name.is_empty() {
+                    self.model_items.push(name.to_string());
+                }
+            }
+        }
+    }
+
     fn next(&mut self) {
-        self.selected = (self.selected + 1) % self.commands.len();
+        let count = self.item_count();
+        if count > 0 {
+            self.selected = (self.selected + 1) % count;
+        }
     }
 
     fn previous(&mut self) {
+        let count = self.item_count();
+        if count == 0 {
+            return;
+        }
         if self.selected == 0 {
-            self.selected = self.commands.len() - 1;
+            self.selected = count - 1;
         } else {
             self.selected -= 1;
         }
     }
 
     fn activate_selected(&mut self) {
+        // The model-selection menu is dynamic and has no CommandItem entries;
+        // handle picking a model (or the empty placeholder) up front.
+        if self.menu == MenuKind::SelectModel {
+            let back = self.ai_back_menu();
+            if self.model_items.is_empty() {
+                self.push_log(LogEntry::Info(
+                    "[INFO] No models installed. Use Download Model to fetch one.".to_string(),
+                ));
+                self.set_menu(back);
+                self.trim_logs();
+                return;
+            }
+            let name = self.model_items[self.selected].clone();
+            self.selected_model = Some(name.clone());
+            self.push_log(LogEntry::Command(format!("select model: {}", name)));
+            self.push_log(LogEntry::Info(format!(
+                "[INFO] Active model set to '{}'.",
+                name
+            )));
+            self.set_menu(back);
+            self.trim_logs();
+            return;
+        }
+
         if self.commands.is_empty() {
             return;
         }
@@ -339,12 +442,55 @@ impl AppState {
                 return;
             }
             Action::Execute(args) => {
+                let args = args.into_iter().map(String::from).collect();
                 self.spawn_process(item.label, args);
+            }
+            Action::OpenModelMenu => {
+                self.push_log(LogEntry::Command(item.label.to_string()));
+                self.push_log(LogEntry::Info("[INFO] Loading installed models...".to_string()));
+                self.load_models_into_menu();
+                if self.model_items.is_empty() {
+                    self.push_log(LogEntry::Info(
+                        "[INFO] No models found. Is Ollama running? Try Open Ollama, or use Download Model."
+                            .to_string(),
+                    ));
+                } else {
+                    self.push_log(LogEntry::Info(format!(
+                        "[INFO] {} model(s) found. Select one and press Enter.",
+                        self.model_items.len()
+                    )));
+                }
+                self.set_menu(MenuKind::SelectModel);
+                self.trim_logs();
+            }
+            Action::ArmInput(purpose) => {
+                self.input_purpose = purpose;
+                self.focus = Focus::Input;
+                self.input.clear();
+                self.push_log(LogEntry::Command(item.label.to_string()));
+                match purpose {
+                    InputPurpose::DownloadModel => self.push_log(LogEntry::Info(
+                        "[INFO] Type a model name (e.g. llama3.2) and press Enter to download. Tab returns to the dashboard."
+                            .to_string(),
+                    )),
+                    InputPurpose::Chat => {
+                        let model = self
+                            .selected_model
+                            .clone()
+                            .unwrap_or_else(|| "default".to_string());
+                        self.push_log(LogEntry::Info(format!(
+                            "[INFO] Chatting with '{}'. Type a message and press Enter. Tab returns to the dashboard.",
+                            model
+                        )));
+                    }
+                    InputPurpose::None => {}
+                }
+                self.trim_logs();
             }
         }
     }
 
-    fn spawn_process(&mut self, label: &str, args: Vec<&'static str>) {
+    fn spawn_process(&mut self, label: &str, args: Vec<String>) {
         self.push_log(LogEntry::Command(label.to_string()));
 
         let exe = match env::current_exe() {
@@ -424,8 +570,9 @@ impl AppState {
             });
         }
 
-        self.logs
-            .push(LogEntry::Info("[INFO] Process started in background.".to_string()));
+        self.push_log(LogEntry::Info(
+            "[INFO] Process started in background.".to_string(),
+        ));
         self.running.push(RunningProcess {
             label: label.to_string(),
             child,
@@ -434,15 +581,43 @@ impl AppState {
     }
 
     fn send_input_line(&mut self) {
-        if self.input.trim().is_empty() {
-            self.input.clear();
+        let text = self.input.trim().to_string();
+        self.input.clear();
+        if text.is_empty() {
             return;
         }
 
-        self.input.clear();
-        self.push_log(LogEntry::Info(
-            "[INFO] Input forwarding is disabled. Commands run in background mode.".to_string(),
-        ));
+        match self.input_purpose {
+            InputPurpose::DownloadModel => {
+                self.spawn_process(
+                    "vn ai pull",
+                    vec!["ai".to_string(), "pull".to_string(), text],
+                );
+                // One-shot: return focus to the dashboard after starting.
+                self.input_purpose = InputPurpose::None;
+                self.focus = Focus::Dashboard;
+            }
+            InputPurpose::Chat => {
+                let model = self.selected_model.clone();
+                self.push_log(LogEntry::Command(format!("You: {}", text)));
+                let mut args = vec!["ai".to_string(), "chat".to_string()];
+                args.push("--session".to_string());
+                args.push("tui".to_string());
+                if let Some(model) = model {
+                    args.push("--model".to_string());
+                    args.push(model);
+                }
+                args.push(text);
+                self.spawn_process("vn ai chat", args);
+                // Stay in chat mode so the conversation can continue.
+            }
+            InputPurpose::None => {
+                self.push_log(LogEntry::Info(
+                    "[INFO] Input is not attached to an action. Use Download Model or Chat first."
+                        .to_string(),
+                ));
+            }
+        }
 
         self.trim_logs();
     }
@@ -644,7 +819,8 @@ fn menu_allowed_on_current_os(menu: MenuKind) -> bool {
         | MenuKind::RunWin11Open
         | MenuKind::RunWin11Ai
         | MenuKind::RunWin11Dotfiles => cfg!(windows),
-        MenuKind::Root => true,
+        // Model selection talks to Ollama over HTTP and works on any host.
+        MenuKind::Root | MenuKind::SelectModel => true,
     }
 }
 
@@ -782,6 +958,18 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "ubuntu22-open-ollama"]),
             },
             CommandItem {
+                label: "Select Model",
+                action: Action::OpenModelMenu,
+            },
+            CommandItem {
+                label: "Download Model (type name)",
+                action: Action::ArmInput(InputPurpose::DownloadModel),
+            },
+            CommandItem {
+                label: "Chat (type message)",
+                action: Action::ArmInput(InputPurpose::Chat),
+            },
+            CommandItem {
                 label: "< Back to ubuntu22",
                 action: Action::OpenMenu(MenuKind::RunUbuntu22),
             },
@@ -912,6 +1100,18 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "win11-open-ollama"]),
             },
             CommandItem {
+                label: "Select Model",
+                action: Action::OpenModelMenu,
+            },
+            CommandItem {
+                label: "Download Model (type name)",
+                action: Action::ArmInput(InputPurpose::DownloadModel),
+            },
+            CommandItem {
+                label: "Chat (type message)",
+                action: Action::ArmInput(InputPurpose::Chat),
+            },
+            CommandItem {
                 label: "< Back to win11",
                 action: Action::OpenMenu(MenuKind::RunWin11),
             },
@@ -926,6 +1126,8 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::OpenMenu(MenuKind::RunWin11),
             },
         ],
+        // Built dynamically from installed models in `set_menu`; never queried here.
+        MenuKind::SelectModel => Vec::new(),
     }
 }
 
@@ -1030,7 +1232,8 @@ fn event_loop(
                 ])
                 .split(frame.area());
 
-            let header = Paragraph::new("vecnode vn")
+            let active_model = app.selected_model.clone().unwrap_or_else(|| "default".to_string());
+            let header = Paragraph::new(format!("vecnode vn    |    AI model: {}", active_model))
                 .style(Style::default().add_modifier(Modifier::BOLD))
                 .block(Block::default().borders(Borders::ALL).title("CLI"));
 
@@ -1044,14 +1247,32 @@ fn event_loop(
                 .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
                 .split(middle[0]);
 
-            let button_items: Vec<ListItem> = app
-                .commands
+            // The model menu lists installed models (or a placeholder); every
+            // other menu lists its CommandItem labels.
+            let (labels, dashboard_title): (Vec<String>, &str) =
+                if app.menu == MenuKind::SelectModel {
+                    if app.model_items.is_empty() {
+                        (
+                            vec!["(no models found - use Download Model)".to_string()],
+                            "Select Model",
+                        )
+                    } else {
+                        (app.model_items.clone(), "Select Model")
+                    }
+                } else {
+                    (
+                        app.commands.iter().map(|cmd| cmd.label.to_string()).collect(),
+                        "Dashboard",
+                    )
+                };
+
+            let button_items: Vec<ListItem> = labels
                 .iter()
                 .enumerate()
-                .map(|(idx, cmd)| {
+                .map(|(idx, label)| {
                     if idx == app.selected {
                         ListItem::new(Line::from(vec![Span::styled(
-                            format!("[ {} ]", cmd.label),
+                            format!("[ {} ]", label),
                             Style::default()
                                 .fg(Color::Black)
                                 .bg(Color::Cyan)
@@ -1059,7 +1280,7 @@ fn event_loop(
                         )]))
                     } else {
                         ListItem::new(Line::from(vec![Span::styled(
-                            format!("[ {} ]", cmd.label),
+                            format!("[ {} ]", label),
                             Style::default().fg(Color::White),
                         )]))
                     }
@@ -1070,7 +1291,7 @@ fn event_loop(
             list_state.select(Some(app.selected));
 
             let dashboard = List::new(button_items)
-                .block(Block::default().borders(Borders::ALL).title("Dashboard"));
+                .block(Block::default().borders(Borders::ALL).title(dashboard_title));
 
             let docker = Paragraph::new(app.docker_panel_lines())
                 .block(Block::default().borders(Borders::ALL).title("Docker"));
@@ -1123,10 +1344,19 @@ fn event_loop(
                 }
             };
 
-            let input_text = if app.input.is_empty() {
-                "Type input for running command...".to_string()
-            } else {
+            let input_text = if !app.input.is_empty() {
                 app.input.clone()
+            } else {
+                match app.input_purpose {
+                    InputPurpose::DownloadModel => {
+                        "Type a model name to download, then Enter...".to_string()
+                    }
+                    InputPurpose::Chat => format!(
+                        "Message {} , then Enter...",
+                        app.selected_model.clone().unwrap_or_else(|| "default".to_string())
+                    ),
+                    InputPurpose::None => "Type input for running command...".to_string(),
+                }
             };
 
             let input_style = Style::default().fg(Color::White).bg(Color::Green);

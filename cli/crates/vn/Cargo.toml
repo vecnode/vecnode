@@ -12,6 +12,7 @@ crossterm = { workspace = true }
 dirs = { workspace = true }
 futures-util = { workspace = true }
 ratatui = { workspace = true }
+ollama-rs = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

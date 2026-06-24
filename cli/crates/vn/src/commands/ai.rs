@@ -1,10 +1,145 @@
-use crate::AiArgs;
-use anyhow::Result;
+use crate::config::{expand_tilde, LoadedConfig};
+use crate::ollama::session::{session_path, SessionFile};
+use crate::{AiArgs, AiCommand};
+use anyhow::{bail, Context, Result};
+use ollama_rs::generation::chat::{request::ChatMessageRequest, ChatMessage};
+use ollama_rs::Ollama;
+use std::io::Write;
 
-pub async fn run(_args: AiArgs, loaded: &crate::config::LoadedConfig) -> Result<()> {
-    println!(
-        "todo: AI functionality is not yet available (configured host: {}, model: {})",
-        loaded.config.ollama.host, loaded.config.ollama.model
-    );
+pub async fn run(args: AiArgs, loaded: &LoadedConfig) -> Result<()> {
+    let host = args
+        .host
+        .clone()
+        .unwrap_or_else(|| loaded.config.ollama.host.clone());
+    let ollama = build_client(&host);
+
+    match args.command {
+        AiCommand::Status => status(&ollama, &host).await,
+        AiCommand::Models => models(&ollama).await,
+        AiCommand::Pull { name } => pull(&ollama, &name).await,
+        AiCommand::Chat {
+            message,
+            model,
+            session,
+            system,
+        } => {
+            let model = model.unwrap_or_else(|| loaded.config.ollama.model.clone());
+            let session = session.unwrap_or_else(|| "tui".to_string());
+            let system = system.or_else(|| loaded.config.prompts.system.clone());
+            chat(&ollama, loaded, &model, &session, system.as_deref(), &message).await
+        }
+    }
+}
+
+/// Build an Ollama client from a configured host URL such as
+/// `http://127.0.0.1:11434`. `Ollama::new` is deprecated upstream but is the
+/// stable way to point at a specific host/port across ollama-rs versions.
+#[allow(deprecated)]
+fn build_client(host: &str) -> Ollama {
+    let (host, port) = split_host_port(host, 11434);
+    Ollama::new(host, port)
+}
+
+/// Split a URL like `http://127.0.0.1:11434` into (`http://127.0.0.1`, 11434).
+/// Falls back to the default port when no numeric port is present.
+fn split_host_port(host: &str, default_port: u16) -> (String, u16) {
+    if let Some((head, tail)) = host.rsplit_once(':') {
+        if let Ok(port) = tail.parse::<u16>() {
+            return (head.to_string(), port);
+        }
+    }
+    (host.to_string(), default_port)
+}
+
+async fn status(ollama: &Ollama, host: &str) -> Result<()> {
+    match ollama.list_local_models().await {
+        Ok(models) => {
+            println!(
+                "[OK] Ollama is reachable at {} ({} model(s) installed).",
+                host,
+                models.len()
+            );
+            Ok(())
+        }
+        Err(err) => {
+            println!("[ERROR] Could not reach Ollama at {}: {}", host, err);
+            println!("[INFO] Start it with the 'Open Ollama' command, then try again.");
+            bail!("ollama is not reachable");
+        }
+    }
+}
+
+/// Print installed model names, one per line, to stdout. Kept free of other
+/// output so the TUI can parse it directly to build the model menu.
+async fn models(ollama: &Ollama) -> Result<()> {
+    let models = ollama
+        .list_local_models()
+        .await
+        .context("failed to list models from Ollama")?;
+
+    if models.is_empty() {
+        eprintln!("[INFO] No models installed. Use 'vn ai pull <name>' or the Download Model button.");
+        return Ok(());
+    }
+
+    for model in models {
+        println!("{}", model.name);
+    }
+    Ok(())
+}
+
+async fn pull(ollama: &Ollama, name: &str) -> Result<()> {
+    println!("[INFO] Downloading model '{}' (this can take a while)...", name);
+    let _ = std::io::stdout().flush();
+
+    ollama
+        .pull_model(name.to_string(), false)
+        .await
+        .with_context(|| format!("failed to download model '{}'", name))?;
+
+    println!("[OK] Model '{}' downloaded and ready.", name);
+    Ok(())
+}
+
+async fn chat(
+    ollama: &Ollama,
+    loaded: &LoadedConfig,
+    model: &str,
+    session_name: &str,
+    system: Option<&str>,
+    message: &str,
+) -> Result<()> {
+    let sessions_dir = expand_tilde(&loaded.config.sessions.dir);
+    let path = session_path(&sessions_dir, session_name);
+    let mut session = SessionFile::load_or_new(&path, session_name)?;
+
+    // Replay prior turns so the model keeps context across invocations.
+    let mut messages: Vec<ChatMessage> = Vec::new();
+    if let Some(system_prompt) = system {
+        messages.push(ChatMessage::system(system_prompt.to_string()));
+    }
+    for msg in &session.messages {
+        match msg.role.as_str() {
+            "user" => messages.push(ChatMessage::user(msg.content.clone())),
+            "assistant" => messages.push(ChatMessage::assistant(msg.content.clone())),
+            "system" => messages.push(ChatMessage::system(msg.content.clone())),
+            _ => {}
+        }
+    }
+    messages.push(ChatMessage::user(message.to_string()));
+
+    let request = ChatMessageRequest::new(model.to_string(), messages);
+    let response = ollama
+        .send_chat_messages(request)
+        .await
+        .context("chat request to Ollama failed")?;
+    let reply = response.message.content;
+
+    println!("{}: {}", model, reply);
+
+    session.append_user(message.to_string());
+    session.append_assistant(reply);
+    session.save(&path)?;
+
     Ok(())
 }

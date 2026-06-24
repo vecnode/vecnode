@@ -1,10 +1,11 @@
 mod commands;
 mod config;
+mod ollama;
 mod tray;
 mod tui;
 
 use anyhow::Result;
-use clap::{ArgAction, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
@@ -34,25 +35,33 @@ enum Command {
 
 #[derive(clap::Args, Debug)]
 struct AiArgs {
-    prompt: Option<String>,
+    #[command(subcommand)]
+    command: AiCommand,
 
-    #[arg(long)]
-    model: Option<String>,
-
-    #[arg(long)]
+    /// Ollama host URL (defaults to the configured host).
+    #[arg(long, global = true)]
     host: Option<String>,
+}
 
-    #[arg(long)]
-    session: Option<String>,
-
-    #[arg(long)]
-    system: Option<String>,
-
-    #[arg(long, action = ArgAction::SetTrue)]
-    stream: bool,
-
-    #[arg(long = "no-stream", action = ArgAction::SetTrue)]
-    no_stream: bool,
+#[derive(Subcommand, Debug)]
+enum AiCommand {
+    /// Check whether the Ollama server is reachable.
+    Status,
+    /// List locally installed models (one name per line).
+    Models,
+    /// Download a model by name (e.g. llama3.2).
+    Pull { name: String },
+    /// Send a chat message and print the reply (context kept per session).
+    Chat {
+        /// The message to send (pass as a single quoted argument).
+        message: String,
+        #[arg(long)]
+        model: Option<String>,
+        #[arg(long)]
+        session: Option<String>,
+        #[arg(long)]
+        system: Option<String>,
+    },
 }
 
 #[derive(clap::Args, Debug)]
