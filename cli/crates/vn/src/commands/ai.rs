@@ -1,7 +1,8 @@
 use crate::config::{expand_tilde, LoadedConfig};
 use crate::ollama::session::{session_path, SessionFile};
 use crate::{AiArgs, AiCommand};
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
+use futures_util::StreamExt;
 use ollama_rs::generation::chat::{request::ChatMessageRequest, ChatMessage};
 use ollama_rs::Ollama;
 use std::io::Write;
@@ -89,13 +90,41 @@ async fn models(ollama: &Ollama) -> Result<()> {
 }
 
 async fn pull(ollama: &Ollama, name: &str) -> Result<()> {
-    println!("[INFO] Downloading model '{}' (this can take a while)...", name);
+    println!("[INFO] Downloading model '{}'...", name);
     let _ = std::io::stdout().flush();
 
-    ollama
-        .pull_model(name.to_string(), false)
+    let mut stream = ollama
+        .pull_model_stream(name.to_string(), false)
         .await
-        .with_context(|| format!("failed to download model '{}'", name))?;
+        .with_context(|| format!("failed to start download of model '{}'", name))?;
+
+    // Stream progress as discrete lines so the TUI/log show live status without
+    // flooding: emit only when the phase or the whole-percent changes.
+    let mut last_message = String::new();
+    let mut last_percent: i64 = -1;
+    while let Some(item) = stream.next().await {
+        let status = item.map_err(|err| anyhow!("error downloading model '{}': {:?}", name, err))?;
+
+        match (status.completed, status.total) {
+            (Some(done), Some(total)) if total > 0 => {
+                let percent = (done as f64 / total as f64 * 100.0) as i64;
+                if status.message != last_message || percent != last_percent {
+                    println!("[INFO] {} - {}%", status.message, percent);
+                    let _ = std::io::stdout().flush();
+                    last_message = status.message.clone();
+                    last_percent = percent;
+                }
+            }
+            _ => {
+                if status.message != last_message {
+                    println!("[INFO] {}", status.message);
+                    let _ = std::io::stdout().flush();
+                    last_message = status.message.clone();
+                    last_percent = -1;
+                }
+            }
+        }
+    }
 
     println!("[OK] Model '{}' downloaded and ready.", name);
     Ok(())
