@@ -8,8 +8,11 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
 use ratatui::Terminal;
+use chrono::Local;
 use std::env;
+use std::fs::OpenOptions;
 use std::io::Read;
+use std::io::Write;
 use std::io::{self, Stdout};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -94,11 +97,14 @@ struct AppState {
     follow_output: bool,
     last_log_count: usize,
     docker_panel: DockerPanelData,
+    log_file: Option<std::fs::File>,
 }
 
 impl AppState {
     fn new(repo_root: Option<std::path::PathBuf>) -> Self {
         let (tx, rx) = mpsc::channel::<ProcEvent>();
+
+        let log_file = open_session_log(&repo_root);
 
         let mut app = Self {
             menu: MenuKind::Root,
@@ -120,10 +126,49 @@ impl AppState {
                 images: Vec::new(),
                 ports: Vec::new(),
             },
+            log_file,
         };
 
         app.refresh_ui();
         app
+    }
+
+    /// Append a single log entry to the on-disk session log, prefixed with a
+    /// local timestamp. Commands get a prominent marker so a session reads as a
+    /// dated history of what was run and what it printed. Mirrors what the
+    /// "CLI Output" panel shows; failures to write are intentionally silent so
+    /// logging never disrupts the TUI.
+    fn write_log_line(&mut self, entry: &LogEntry) {
+        let Some(file) = self.log_file.as_mut() else {
+            return;
+        };
+
+        let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
+        let line = match entry {
+            LogEntry::Command(text) => format!("[{}] >>> COMMAND: {}", ts, text),
+            LogEntry::Info(text) => format!("[{}] INFO  | {}", ts, text),
+            LogEntry::Error(text) => format!("[{}] ERROR | {}", ts, text),
+            LogEntry::Stdout(text) => format!("[{}] OUT   | {}", ts, text),
+            LogEntry::Stderr(text) => format!("[{}] ERR   | {}", ts, text),
+        };
+
+        let _ = writeln!(file, "{}", line);
+        let _ = file.flush();
+    }
+
+    /// Record one log entry: persist it to the session log and show it in the
+    /// "CLI Output" panel. Replaces direct pushes to `self.logs` so every line
+    /// is logged in exactly one place.
+    fn push_log(&mut self, entry: LogEntry) {
+        self.write_log_line(&entry);
+        self.logs.push(entry);
+    }
+
+    /// Record many log entries (used for streamed stdout/stderr chunks).
+    fn extend_log<I: IntoIterator<Item = LogEntry>>(&mut self, entries: I) {
+        for entry in entries {
+            self.push_log(entry);
+        }
     }
 
     fn refresh_ui(&mut self) {
@@ -263,16 +308,16 @@ impl AppState {
         match item.action {
             Action::OpenMenu(next_menu) => {
                 if !menu_allowed_on_current_os(next_menu) {
-                    self.logs.push(LogEntry::Command(item.label.to_string()));
-                    self.logs.push(LogEntry::Error(
+                    self.push_log(LogEntry::Command(item.label.to_string()));
+                    self.push_log(LogEntry::Error(
                         "[WARNING] This submenu is not supported on the current OS.".to_string(),
                     ));
                     if cfg!(windows) {
-                        self.logs.push(LogEntry::Info(
+                        self.push_log(LogEntry::Info(
                             "[INFO] Windows host: use vn run win11 submenu items.".to_string(),
                         ));
                     } else {
-                        self.logs.push(LogEntry::Info(
+                        self.push_log(LogEntry::Info(
                             "[INFO] Non-Windows host: use vn run ubuntu22 submenu items.".to_string(),
                         ));
                     }
@@ -280,15 +325,15 @@ impl AppState {
                     return;
                 }
 
-                self.logs.push(LogEntry::Command(item.label.to_string()));
-                self.logs.push(LogEntry::Info("[INFO] Opened submenu.".to_string()));
+                self.push_log(LogEntry::Command(item.label.to_string()));
+                self.push_log(LogEntry::Info("[INFO] Opened submenu.".to_string()));
                 self.set_menu(next_menu);
                 self.trim_logs();
                 return;
             }
             Action::BackToRoot => {
-                self.logs.push(LogEntry::Command(item.label.to_string()));
-                self.logs.push(LogEntry::Info("[INFO] Returned to Dashboard.".to_string()));
+                self.push_log(LogEntry::Command(item.label.to_string()));
+                self.push_log(LogEntry::Info("[INFO] Returned to Dashboard.".to_string()));
                 self.set_menu(MenuKind::Root);
                 self.trim_logs();
                 return;
@@ -300,12 +345,12 @@ impl AppState {
     }
 
     fn spawn_process(&mut self, label: &str, args: Vec<&'static str>) {
-        self.logs.push(LogEntry::Command(label.to_string()));
+        self.push_log(LogEntry::Command(label.to_string()));
 
         let exe = match env::current_exe() {
             Ok(path) => path,
             Err(err) => {
-                self.logs.push(LogEntry::Error(format!(
+                self.push_log(LogEntry::Error(format!(
                     "[ERROR] Could not resolve current executable: {}",
                     err
                 )));
@@ -329,7 +374,7 @@ impl AppState {
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(err) => {
-                self.logs.push(LogEntry::Error(format!(
+                self.push_log(LogEntry::Error(format!(
                     "[ERROR] Failed to start command: {}",
                     err
                 )));
@@ -395,7 +440,7 @@ impl AppState {
         }
 
         self.input.clear();
-        self.logs.push(LogEntry::Info(
+        self.push_log(LogEntry::Info(
             "[INFO] Input forwarding is disabled. Commands run in background mode.".to_string(),
         ));
 
@@ -405,12 +450,12 @@ impl AppState {
     fn pump_process(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             match event {
-                ProcEvent::Stdout(chunk) => self
-                    .logs
-                    .extend(split_to_entries(chunk, false).into_iter().map(LogEntry::Stdout)),
-                ProcEvent::Stderr(chunk) => self
-                    .logs
-                    .extend(split_to_entries(chunk, true).into_iter().map(LogEntry::Stderr)),
+                ProcEvent::Stdout(chunk) => {
+                    self.extend_log(split_to_entries(chunk, false).into_iter().map(LogEntry::Stdout))
+                }
+                ProcEvent::Stderr(chunk) => {
+                    self.extend_log(split_to_entries(chunk, true).into_iter().map(LogEntry::Stderr))
+                }
             }
         }
 
@@ -438,7 +483,7 @@ impl AppState {
             };
 
             if let Some(message) = message {
-                self.logs.push(message);
+                self.push_log(message);
             }
 
             if remove_current {
@@ -477,6 +522,34 @@ impl AppState {
             self.output_scroll = max_scroll;
         }
     }
+}
+
+/// Open (creating if needed) the persistent TUI session log under
+/// `<repo_root>/logs/vn-tui.log` in append mode and write a session header.
+/// Falls back to the current directory if no repo root is known. The `logs/`
+/// directory and `*.log` files are gitignored, so this never reaches GitHub.
+/// Returns `None` if the log cannot be opened; the TUI then runs without
+/// file logging rather than failing.
+fn open_session_log(repo_root: &Option<std::path::PathBuf>) -> Option<std::fs::File> {
+    let base = repo_root
+        .clone()
+        .or_else(|| env::current_dir().ok())?;
+    let dir = base.join("logs");
+    std::fs::create_dir_all(&dir).ok()?;
+
+    let path = dir.join("vn-tui.log");
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .ok()?;
+
+    let ts = Local::now().format("%Y-%m-%d %H:%M:%S");
+    let _ = writeln!(file);
+    let _ = writeln!(file, "[{}] ===== vn TUI session started =====", ts);
+    let _ = file.flush();
+
+    Some(file)
 }
 
 fn split_to_entries(chunk: String, is_stderr: bool) -> Vec<String> {
