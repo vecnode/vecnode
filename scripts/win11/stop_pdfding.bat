@@ -2,13 +2,13 @@
 setlocal EnableExtensions
 
 REM ---------------------------------------------------------------------------
-REM stop_papra.bat
-REM Stop the Papra container. The container is kept (not removed), so it can be
-REM reopened quickly with run_papra.bat. Your library/ and library/.papra-data/
-REM are untouched.
+REM stop_pdfding.bat
+REM Stop the PdfDing container. The container is kept (not removed), so it can be
+REM reopened quickly with run_pdfding.bat. Your library/.pdfding-data/ (db +
+REM uploaded PDFs) is untouched.
 REM ---------------------------------------------------------------------------
 
-set "CONTAINER=papra"
+set "CONTAINER=pdfding"
 
 where docker >nul 2>nul
 if errorlevel 1 (
