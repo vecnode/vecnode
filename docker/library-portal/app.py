@@ -129,6 +129,27 @@ def list_pdfs() -> list:
     return items
 
 
+def list_dirs() -> list:
+    """All folders under the library (relative paths, excluding hidden ones)."""
+    dirs = set()
+    for root, ds, _ in os.walk(LIBRARY):
+        ds[:] = [d for d in ds if not d.startswith(".")]
+        for d in ds:
+            rel = os.path.relpath(os.path.join(root, d), LIBRARY).replace(os.sep, "/")
+            dirs.add(rel)
+    return sorted(dirs)
+
+
+def clean_folder_rel(raw: str) -> str:
+    """Sanitize a relative folder path: drop traversal/hidden/empty segments."""
+    parts = []
+    for p in str(raw).replace("\\", "/").split("/"):
+        p = re.sub(r'[<>:"|?*\x00-\x1f]', "", p).strip()
+        if p and p not in (".", "..") and not p.startswith("."):
+            parts.append(p)
+    return "/".join(parts)
+
+
 def safe_path(rel: str):
     rel = urllib.parse.unquote(rel)
     full = os.path.realpath(os.path.join(LIBRARY, rel))
@@ -230,7 +251,22 @@ footer{{color:var(--muted);font-size:12px;margin-top:30px;text-align:center;}}
 .modal input{{width:100%;padding:9px 11px;font-size:14px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);outline:none;}}
 .modal input:focus{{border-color:var(--accent);}}
 .row2{{display:flex;gap:10px;}}.row2>div{{flex:1;}}
+.modal select{{width:100%;padding:9px 11px;font-size:14px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);}}
 .actions{{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}}
+/* tree view */
+.tree{{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px;}}
+.trow{{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;font-size:14.5px;}}
+.trow:hover{{background:#F3F1E9;}}
+.tcaret{{width:14px;flex:0 0 auto;color:var(--muted);user-select:none;}}
+.tfolder{{cursor:pointer;font-weight:600;}}
+.tname{{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
+.tname a{{color:inherit;text-decoration:none;}}
+.tsize{{flex:0 0 auto;color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums;}}
+.tx{{flex:0 0 auto;cursor:pointer;color:var(--muted);border:1px solid var(--line);background:var(--surface);border-radius:6px;font-size:12px;line-height:1;padding:3px 7px;}}
+.tx:hover{{border-color:#C0392B;color:#C0392B;}}
+.tfile{{cursor:grab;}}
+.tchildren.collapsed{{display:none;}}
+.drop-hover{{outline:2px dashed var(--accent);outline-offset:-2px;background:#F7ECE6;}}
 .btn{{padding:9px 15px;font-size:14px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;}}
 .btn.primary{{background:var(--accent);border-color:var(--accent);color:#fff;}}
 </style></head>
@@ -248,10 +284,13 @@ footer{{color:var(--muted);font-size:12px;margin-top:30px;text-align:center;}}
     <div class="toggle">
       <button id="btnList" class="active" type="button">List</button>
       <button id="btnGrid" type="button">Grid</button>
+      <button id="btnTree" type="button">Tree</button>
     </div>
+    <button id="btnNewFolder" class="btn" type="button" style="display:none">+ New folder</button>
   </div>
   <div id="count" class="count"></div>
   <div id="list" class="view-list">{rows}</div>
+  <div id="tree" class="tree" style="display:none"></div>
   <div id="empty" class="empty" style="display:none">No documents match.</div>
   <footer>library-portal · served live from <code>library/</code></footer>
 </div>
@@ -287,7 +326,20 @@ footer{{color:var(--muted);font-size:12px;margin-top:30px;text-align:center;}}
   </div>
 </div>
 
+<div id="nfback" class="backdrop">
+  <div class="modal">
+    <h3>New folder</h3>
+    <label>Inside</label><select id="nf_parent"></select>
+    <label>Folder name</label><input id="nf_name" type="text" placeholder="e.g. Theses">
+    <div class="actions">
+      <button class="btn" type="button" onclick="closeNF()">Cancel</button>
+      <button class="btn primary" type="button" onclick="createFolder()">Create</button>
+    </div>
+  </div>
+</div>
+
 <script>
+const FOLDERS={folders_json};
 const listEl=document.getElementById('list');
 const q=document.getElementById('q'), sortEl=document.getElementById('sort');
 const countEl=document.getElementById('count'), emptyEl=document.getElementById('empty');
@@ -316,16 +368,91 @@ function sortItems(){{
   }});
   for(const el of items) listEl.appendChild(el);
 }}
-function setView(grid){{
-  listEl.className=grid?'view-grid':'view-list';
-  document.getElementById('btnGrid').classList.toggle('active',grid);
-  document.getElementById('btnList').classList.toggle('active',!grid);
-  localStorage.setItem('lp_view',grid?'grid':'list');
+function escapeHtml(s){{return (s||'').replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c]));}}
+function setView(mode){{
+  const list=document.getElementById('list'),tree=document.getElementById('tree'),nf=document.getElementById('btnNewFolder');
+  document.getElementById('btnList').classList.toggle('active',mode==='list');
+  document.getElementById('btnGrid').classList.toggle('active',mode==='grid');
+  document.getElementById('btnTree').classList.toggle('active',mode==='tree');
+  if(mode==='tree'){{ list.style.display='none'; nf.style.display=''; tree.style.display=''; buildTree(); }}
+  else {{ tree.style.display='none'; nf.style.display='none'; list.style.display=''; list.className=(mode==='grid')?'view-grid':'view-list'; }}
+  localStorage.setItem('lp_view',mode);
 }}
+function moveFile(rel,folder){{
+  return fetch('/api/move',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{rel,folder}})}});
+}}
+function mkFolderRow(label,folderRel,depth){{
+  const row=document.createElement('div'); row.className='trow tfolder';
+  row.style.paddingLeft=(depth*18+8)+'px'; row.dataset.folder=folderRel;
+  row.innerHTML='<span class="tcaret">▾</span><span>📁</span><span class="tname">'+escapeHtml(label)+'</span>';
+  row.addEventListener('dragover',e=>{{e.preventDefault();row.classList.add('drop-hover');}});
+  row.addEventListener('dragleave',()=>row.classList.remove('drop-hover'));
+  row.addEventListener('drop',async e=>{{e.preventDefault();row.classList.remove('drop-hover');
+    const rel=e.dataTransfer.getData('text/plain'); if(!rel)return;
+    const r=await moveFile(rel,folderRel);
+    if(r.ok)location.reload(); else alert('Move failed: '+(await r.text()));
+  }});
+  return row;
+}}
+function wireToggle(row,kids){{
+  row.addEventListener('click',e=>{{
+    if(e.target.closest('a')||e.target.closest('.tx'))return;
+    const col=kids.classList.toggle('collapsed');
+    row.querySelector('.tcaret').textContent=col?'▸':'▾';
+  }});
+}}
+function mkFileRow(fl,depth){{
+  const row=document.createElement('div'); row.className='trow tfile';
+  row.style.paddingLeft=(depth*18+24)+'px'; row.draggable=true;
+  row.addEventListener('dragstart',e=>{{e.dataTransfer.setData('text/plain',fl.rel);e.dataTransfer.effectAllowed='move';}});
+  const href='/view/'+fl.rel.split('/').map(encodeURIComponent).join('/');
+  row.innerHTML='<span>📄</span><span class="tname"><a href="'+href+'" target="_blank" rel="noopener">'+escapeHtml(fl.name)+'</a></span><span class="tsize">'+escapeHtml(fl.size)+'</span><button class="tx" type="button">Delete</button>';
+  row.querySelector('.tx').onclick=e=>{{e.preventDefault();e.stopPropagation();openDeleteRel(fl.rel,fl.name);}};
+  return row;
+}}
+function renderNode(node,base,depth,into){{
+  for(const fn of Object.keys(node.folders).sort()){{
+    const rel=base?base+'/'+fn:fn;
+    const fr=mkFolderRow(fn,rel,depth); into.appendChild(fr);
+    const kids=document.createElement('div'); kids.className='tchildren';
+    renderNode(node.folders[fn],rel,depth+1,kids); into.appendChild(kids);
+    wireToggle(fr,kids);
+  }}
+  for(const fl of node.files.slice().sort((a,b)=>a.name.localeCompare(b.name))) into.appendChild(mkFileRow(fl,depth));
+}}
+function buildTree(){{
+  const tree=document.getElementById('tree');
+  const files=Array.from(document.querySelectorAll('.item')).map(el=>({{rel:el.dataset.rel,name:el.dataset.file,size:el.dataset.size||''}}));
+  const root={{folders:{{}},files:[]}};
+  function ensure(parts){{let n=root;for(const p of parts){{if(!p)continue;n.folders[p]=n.folders[p]||{{folders:{{}},files:[]}};n=n.folders[p];}}return n;}}
+  for(const f of FOLDERS) ensure(f.split('/'));
+  for(const fl of files){{const parts=fl.rel.split('/');parts.pop();ensure(parts).files.push(fl);}}
+  tree.innerHTML='';
+  const top=mkFolderRow('library/','',0); tree.appendChild(top);
+  const kids=document.createElement('div'); kids.className='tchildren';
+  renderNode(root,'',1,kids); tree.appendChild(kids); wireToggle(top,kids);
+}}
+const nfBtn=document.getElementById('btnNewFolder');
+nfBtn.onclick=()=>{{
+  const sel=document.getElementById('nf_parent');
+  sel.innerHTML='<option value="">library/ (root)</option>'+FOLDERS.map(f=>'<option value="'+escapeHtml(f)+'">'+escapeHtml(f)+'</option>').join('');
+  document.getElementById('nf_name').value='';
+  document.getElementById('nfback').classList.add('show');
+}};
+function closeNF(){{document.getElementById('nfback').classList.remove('show');}}
+async function createFolder(){{
+  const parent=document.getElementById('nf_parent').value;
+  const name=document.getElementById('nf_name').value.trim();
+  if(!name){{alert('Enter a folder name');return;}}
+  const r=await fetch('/api/mkdir',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{parent,name}})}});
+  if(r.ok)location.reload(); else alert('Create failed: '+(await r.text()));
+}}
+document.getElementById('nfback').addEventListener('click',e=>{{if(e.target.id==='nfback')closeNF();}});
 q.addEventListener('input',apply);
 sortEl.addEventListener('change',()=>{{sortItems();apply();}});
-document.getElementById('btnGrid').onclick=()=>setView(true);
-document.getElementById('btnList').onclick=()=>setView(false);
+document.getElementById('btnList').onclick=()=>setView('list');
+document.getElementById('btnGrid').onclick=()=>setView('grid');
+document.getElementById('btnTree').onclick=()=>setView('tree');
 
 function openModal(el){{
   document.getElementById('m_rel').value=el.dataset.rel;
@@ -353,11 +480,12 @@ async function saveModal(){{
 document.querySelectorAll('.edit').forEach(b=>b.onclick=e=>{{e.preventDefault();e.stopPropagation();openModal(b.closest('.item'));}});
 document.getElementById('backdrop').addEventListener('click',e=>{{if(e.target.id==='backdrop')closeModal();}});
 
-function openDelete(el){{
-  document.getElementById('d_rel').value=el.dataset.rel;
-  document.getElementById('delmsg').textContent='Permanently delete "'+el.dataset.file+'" from the library? This removes the file from disk and cannot be undone.';
+function openDeleteRel(rel,file){{
+  document.getElementById('d_rel').value=rel;
+  document.getElementById('delmsg').textContent='Permanently delete "'+file+'" from the library? This removes the file from disk and cannot be undone.';
   document.getElementById('delback').classList.add('show');
 }}
+function openDelete(el){{ openDeleteRel(el.dataset.rel, el.dataset.file); }}
 function closeDelete(){{document.getElementById('delback').classList.remove('show');}}
 async function confirmDelete(){{
   const rel=document.getElementById('d_rel').value;
@@ -369,7 +497,7 @@ document.getElementById('delback').addEventListener('click',e=>{{if(e.target.id=
 
 // init
 sortItems();
-if(localStorage.getItem('lp_view')==='grid')setView(true);
+setView(localStorage.getItem('lp_view')||'list');
 apply();
 </script>
 </body></html>"""
@@ -395,6 +523,7 @@ def render_index() -> str:
         a = lambda s: html.escape(s, quote=True)
         rows.append(
             f'<div class="item" data-rel="{a(it["rel"])}" data-file="{a(it["file"])}" '
+            f'data-size="{a(human_size(it["size"]))}" '
             f'data-title="{a(it["title"].lower())}" data-title-raw="{a(it["title"])}" '
             f'data-year="{a(it["year"])}" data-author="{a(it["author"])}" '
             f'data-tags="{a(" ".join(tags))}" data-search="{a(search)}">'
@@ -409,7 +538,8 @@ def render_index() -> str:
             f'<div class="size">{human_size(it["size"])}</div></a></div>'
         )
     body = "\n".join(rows) if rows else '<div class="empty">No PDFs found in library/.</div>'
-    return PAGE.format(count=len(items), total=total, rows=body)
+    return PAGE.format(count=len(items), total=total, rows=body,
+                       folders_json=json.dumps(list_dirs()))
 
 
 # --------------------------------------------------------------------------- #
@@ -473,7 +603,70 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_save()
         if self.path == "/api/delete":
             return self.handle_delete()
+        if self.path == "/api/mkdir":
+            return self.handle_mkdir()
+        if self.path == "/api/move":
+            return self.handle_move()
         return self._send(404, b"Not found", "text/plain")
+
+    def handle_mkdir(self):
+        try:
+            payload = self._read_json()
+        except Exception:
+            return self._json(400, {"error": "bad request"})
+        parent = clean_folder_rel(payload.get("parent", ""))
+        name = clean_folder_rel(payload.get("name", ""))
+        rel = "/".join(p for p in (parent, name) if p)
+        if not name:
+            return self._json(400, {"error": "invalid folder name"})
+        full = os.path.realpath(os.path.join(LIBRARY, rel))
+        if full != LIBRARY and not full.startswith(LIBRARY + os.sep):
+            return self._json(400, {"error": "invalid path"})
+        if os.path.exists(full):
+            return self._json(409, {"error": "folder already exists"})
+        try:
+            os.makedirs(full)
+        except OSError as exc:
+            return self._json(500, {"error": f"mkdir failed: {exc}"})
+        return self._json(200, {"ok": True, "path": rel})
+
+    def handle_move(self):
+        try:
+            payload = self._read_json()
+        except Exception:
+            return self._json(400, {"error": "bad request"})
+        rel = payload.get("rel", "")
+        full = safe_path(rel)
+        if not full:
+            return self._json(404, {"error": "not found"})
+        folder = clean_folder_rel(payload.get("folder", ""))
+        dest_dir = os.path.realpath(os.path.join(LIBRARY, folder)) if folder else LIBRARY
+        if dest_dir != LIBRARY and not dest_dir.startswith(LIBRARY + os.sep):
+            return self._json(400, {"error": "invalid folder"})
+        if not os.path.isdir(dest_dir):
+            return self._json(400, {"error": "destination folder does not exist"})
+        target = os.path.join(dest_dir, os.path.basename(full))
+        if os.path.realpath(target) == os.path.realpath(full):
+            return self._json(200, {"ok": True, "rel": rel})  # already there
+        if os.path.exists(target):
+            return self._json(409, {"error": "a file with that name exists in the target folder"})
+        with _LOCK:
+            try:
+                os.rename(full, target)
+            except OSError as exc:
+                return self._json(500, {"error": f"move failed: {exc}"})
+            newrel = os.path.relpath(target, LIBRARY).replace(os.sep, "/")
+            side = load_sidecar()
+            if rel in side:
+                side[newrel] = side.pop(rel)
+                save_sidecar(side)
+            old_thumb = thumb_file(rel)
+            if os.path.exists(old_thumb):
+                try:
+                    os.remove(old_thumb)
+                except OSError:
+                    pass
+        return self._json(200, {"ok": True, "rel": newrel})
 
     def handle_delete(self):
         try:

@@ -166,7 +166,8 @@ script pair, change the image/port/container name, add the `run.rs` mappings, an
 `docker/library-portal/`, so **no PDFs enter the image**), then runs it with the repo
 `library/` bind-mounted on port 8090 and opens Chrome. The server walks `/library` per
 request and renders an Anthropic-style index, streaming PDFs inline for the browser viewer.
-It supports edit/rename, per-document tags, list/grid (thumbnail) views and sort. App state
+It supports edit/rename, per-document tags, delete, list/grid/tree views, sort, and (in tree
+view) creating folders and drag-and-drop moving PDFs into them. App state
 (metadata overrides + tags) is kept in `library/.portal/portal.json` and thumbnails are
 cached under `library/.portal/thumbs/` (both gitignored, hidden from the listing); PDFs are
 only modified on an explicit rename. `open` rebuilds + recreates the container each time

@@ -12,7 +12,8 @@ A lightweight web viewer/manager for the repo's `library/` folder.
 Features:
 - **Edit** a document's display title / author / year and **rename** the file on disk.
 - **Tags** per document (e.g. `read`), shown as `#tag` chips and searchable.
-- **List and Grid views** — grid shows a first-page **thumbnail** per document.
+- **List, Grid and Tree views** — grid shows a first-page **thumbnail** per document; tree
+  is a file-explorer layout where you can **create folders** and **drag PDFs into folders**.
 - **Sort** by year (new/old) or title (A–Z / Z–A), plus live search.
 
 State: metadata overrides + tags live in `library/.portal/portal.json`, and thumbnails are
