@@ -38,9 +38,9 @@ echo "[INFO] Building image '${IMAGE}' - app only, no PDFs are copied in..."
 docker build -t "${IMAGE}" "${CTX}"
 echo "[OK] Image built."
 
-echo "[INFO] Starting container with library/ mounted read-only..."
+echo "[INFO] Starting container with library/ mounted..."
 docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
-docker run -d --name "${CONTAINER}" -p "${PORT}:8090" -v "${REPO_ROOT}/library:/library:ro" "${IMAGE}" >/dev/null
+docker run -d --name "${CONTAINER}" -p "${PORT}:8090" -v "${REPO_ROOT}/library:/library" "${IMAGE}" >/dev/null
 
 echo "[INFO] Waiting for Library Portal at ${URL} ..."
 READY=0
@@ -64,7 +64,7 @@ fi
 
 echo ""
 echo "[INFO] Open:  ${URL}"
-echo "[INFO] library/ is mounted read-only; nothing is copied into the image."
+echo "[INFO] No PDFs are copied into the image. Tags/edits and thumbnails are stored in library/.portal/."
 echo "[INFO] Stop with:  vn run ubuntu22-stop-library-portal  (or: docker stop ${CONTAINER})"
 echo "[INFO] Logs with:  docker logs -f ${CONTAINER}"
 exit 0

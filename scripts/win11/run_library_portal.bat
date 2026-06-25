@@ -45,9 +45,9 @@ if errorlevel 1 (
 )
 echo [OK] Image built.
 
-echo [INFO] Starting container with library/ mounted read-only...
+echo [INFO] Starting container with library/ mounted...
 docker rm -f %CONTAINER% >nul 2>nul
-docker run -d --name %CONTAINER% -p %PORT%:8090 -v "%REPO_ROOT%\library:/library:ro" %IMAGE% >nul 2>nul
+docker run -d --name %CONTAINER% -p %PORT%:8090 -v "%REPO_ROOT%\library:/library" %IMAGE% >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] Failed to start Library Portal container.
     exit /b 1
@@ -86,7 +86,7 @@ if defined CHROME (
 
 echo.
 echo [INFO] Open:  %URL%
-echo [INFO] library/ is mounted read-only; nothing is copied into the image.
+echo [INFO] No PDFs are copied into the image. Tags/edits and thumbnails are stored in library\.portal\.
 echo [INFO] Stop with:  vn run win11-stop-library-portal  ^(or: docker stop %CONTAINER%^)
 echo [INFO] Logs with:  docker logs -f %CONTAINER%
 endlocal

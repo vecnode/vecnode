@@ -159,15 +159,18 @@ Most apps pull a published image (SilverBullet `ghcr.io/silverbulletmd/silverbul
 script pair, change the image/port/container name, add the `run.rs` mappings, and add the
 `CommandItem`s to both Open submenus.
 
-**library-portal (custom, locally built):** a super-light read-only viewer for the repo's
+**library-portal (custom, locally built):** a lightweight viewer/manager for the repo's
 `library/` folder, living in [docker/library-portal/](docker/library-portal/) —
-`python:3.12-alpine` + a single stdlib `app.py` (no pip deps). `run_library_portal.*`
-`docker build`s the image (the build context is only `docker/library-portal/`, so **no PDFs
-enter the image**), then runs it with the repo `library/` bind-mounted **read-only**
-(`-v …/library:/library:ro`) on port 8090 and opens Chrome. The server walks `/library` per
-request and renders an Anthropic-style index, streaming PDFs inline for the browser viewer —
-it never writes or copies anything. It is stateless, so `open` rebuilds + recreates the
-container each time (picks up `app.py` edits).
+`python:3.12-slim` + a single stdlib `app.py`, plus PyMuPDF for thumbnails.
+`run_library_portal.*` `docker build`s the image (the build context is only
+`docker/library-portal/`, so **no PDFs enter the image**), then runs it with the repo
+`library/` bind-mounted on port 8090 and opens Chrome. The server walks `/library` per
+request and renders an Anthropic-style index, streaming PDFs inline for the browser viewer.
+It supports edit/rename, per-document tags, list/grid (thumbnail) views and sort. App state
+(metadata overrides + tags) is kept in `library/.portal/portal.json` and thumbnails are
+cached under `library/.portal/thumbs/` (both gitignored, hidden from the listing); PDFs are
+only modified on an explicit rename. `open` rebuilds + recreates the container each time
+(picks up `app.py` edits).
 
 Note on `.bat`: inside an `if (…) else (…)` block, any literal `(`/`)` in an `echo`
 must be escaped as `^(`/`^)` (or avoided) — an unescaped `)` closes the block early and
