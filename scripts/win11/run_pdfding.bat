@@ -85,7 +85,7 @@ if defined EXISTS (
 )
 
 echo [INFO] Running image '%IMAGE%'. First run downloads it; this can take a while...
-docker run -d --name %CONTAINER% -p %PORT%:8000 -e HOST_NAME=127.0.0.1 -e SECRET_KEY=%SECRET_KEY% -e CSRF_COOKIE_SECURE=FALSE -e SESSION_COOKIE_SECURE=FALSE -v "%DBDIR%:/home/nonroot/pdfding/db" -v "%MEDIADIR%:/home/nonroot/pdfding/media" %IMAGE% >nul 2>nul
+docker run -d --name %CONTAINER% -p %PORT%:8000 -e "HOST_NAME=localhost,127.0.0.1" -e SECRET_KEY=%SECRET_KEY% -e CSRF_COOKIE_SECURE=FALSE -e SESSION_COOKIE_SECURE=FALSE -e ACCOUNT_DEFAULT_HTTP_PROTOCOL=http -v "%DBDIR%:/home/nonroot/pdfding/db" -v "%MEDIADIR%:/home/nonroot/pdfding/media" %IMAGE% >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] Failed to start PdfDing container.
     exit /b 1
