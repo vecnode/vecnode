@@ -212,9 +212,13 @@ select,.toggle button{{padding:11px 13px;font-size:14px;background:var(--surface
 .meta{{color:var(--muted);font-size:13px;margin-top:2px;}}
 .tags{{margin-top:6px;display:flex;flex-wrap:wrap;gap:5px;}}
 .tag{{font-size:11.5px;color:var(--accent);background:#F3E7E0;border-radius:20px;padding:1px 9px;}}
-.edit{{position:absolute;top:8px;right:8px;border:1px solid var(--line);background:var(--surface);color:var(--muted);
-  border-radius:8px;font-size:12px;padding:3px 8px;cursor:pointer;opacity:0;transition:opacity .12s;}}
-.item:hover .edit{{opacity:1;}}
+.rowbtns{{position:absolute;top:8px;right:8px;display:flex;gap:6px;opacity:0;transition:opacity .12s;z-index:2;}}
+.item:hover .rowbtns{{opacity:1;}}
+.rowbtns button{{border:1px solid var(--line);background:var(--surface);color:var(--muted);
+  border-radius:8px;font-size:12px;padding:3px 8px;cursor:pointer;}}
+.rowbtns .edit:hover{{border-color:var(--accent);color:var(--accent);}}
+.rowbtns .del:hover{{border-color:#C0392B;color:#C0392B;}}
+.btn.danger{{background:#C0392B;border-color:#C0392B;color:#fff;}}
 .empty{{color:var(--muted);padding:40px 0;text-align:center;}}
 footer{{color:var(--muted);font-size:12px;margin-top:30px;text-align:center;}}
 /* modal */
@@ -267,6 +271,18 @@ footer{{color:var(--muted);font-size:12px;margin-top:30px;text-align:center;}}
     <div class="actions">
       <button class="btn" type="button" onclick="closeModal()">Cancel</button>
       <button class="btn primary" type="button" onclick="saveModal()">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="delback" class="backdrop">
+  <div class="modal">
+    <h3>Delete document</h3>
+    <p id="delmsg" style="color:var(--muted);font-size:14px;margin:0;word-break:break-word;"></p>
+    <input type="hidden" id="d_rel">
+    <div class="actions">
+      <button class="btn" type="button" onclick="closeDelete()">Cancel</button>
+      <button class="btn danger" type="button" onclick="confirmDelete()">Yes, delete</button>
     </div>
   </div>
 </div>
@@ -337,6 +353,20 @@ async function saveModal(){{
 document.querySelectorAll('.edit').forEach(b=>b.onclick=e=>{{e.preventDefault();e.stopPropagation();openModal(b.closest('.item'));}});
 document.getElementById('backdrop').addEventListener('click',e=>{{if(e.target.id==='backdrop')closeModal();}});
 
+function openDelete(el){{
+  document.getElementById('d_rel').value=el.dataset.rel;
+  document.getElementById('delmsg').textContent='Permanently delete "'+el.dataset.file+'" from the library? This removes the file from disk and cannot be undone.';
+  document.getElementById('delback').classList.add('show');
+}}
+function closeDelete(){{document.getElementById('delback').classList.remove('show');}}
+async function confirmDelete(){{
+  const rel=document.getElementById('d_rel').value;
+  const r=await fetch('/api/delete',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{rel}})}});
+  if(r.ok){{ location.reload(); }} else {{ alert('Delete failed: '+(await r.text())); }}
+}}
+document.querySelectorAll('.del').forEach(b=>b.onclick=e=>{{e.preventDefault();e.stopPropagation();openDelete(b.closest('.item'));}});
+document.getElementById('delback').addEventListener('click',e=>{{if(e.target.id==='delback')closeDelete();}});
+
 // init
 sortItems();
 if(localStorage.getItem('lp_view')==='grid')setView(true);
@@ -368,7 +398,8 @@ def render_index() -> str:
             f'data-title="{a(it["title"].lower())}" data-title-raw="{a(it["title"])}" '
             f'data-year="{a(it["year"])}" data-author="{a(it["author"])}" '
             f'data-tags="{a(" ".join(tags))}" data-search="{a(search)}">'
-            f'<button class="edit" type="button">Edit</button>'
+            f'<div class="rowbtns"><button class="edit" type="button">Edit</button>'
+            f'<button class="del" type="button">Delete</button></div>'
             f'<a class="open" href="{href}" target="_blank" rel="noopener">'
             f'<img class="thumb" loading="lazy" src="{thumb}" alt="">'
             f'<div class="year">{html.escape(it["year"]) or "&nbsp;"}</div>'
@@ -433,12 +464,45 @@ class Handler(BaseHTTPRequestHandler):
         else:
             self._send(404, b"Not found", "text/plain")
 
+    def _read_json(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        return json.loads(self.rfile.read(length) or b"{}")
+
     def do_POST(self):
-        if self.path != "/api/save":
-            return self._send(404, b"Not found", "text/plain")
+        if self.path == "/api/save":
+            return self.handle_save()
+        if self.path == "/api/delete":
+            return self.handle_delete()
+        return self._send(404, b"Not found", "text/plain")
+
+    def handle_delete(self):
         try:
-            length = int(self.headers.get("Content-Length", "0"))
-            payload = json.loads(self.rfile.read(length) or b"{}")
+            payload = self._read_json()
+        except Exception:
+            return self._json(400, {"error": "bad request"})
+        rel = payload.get("rel", "")
+        full = safe_path(rel)
+        if not full:
+            return self._json(404, {"error": "not found"})
+        with _LOCK:
+            try:
+                os.remove(full)
+            except OSError as exc:
+                return self._json(500, {"error": f"delete failed: {exc}"})
+            side = load_sidecar()
+            if side.pop(rel, None) is not None:
+                save_sidecar(side)
+            thumb = thumb_file(rel)
+            if os.path.exists(thumb):
+                try:
+                    os.remove(thumb)
+                except OSError:
+                    pass
+        self._json(200, {"ok": True})
+
+    def handle_save(self):
+        try:
+            payload = self._read_json()
         except Exception:
             return self._json(400, {"error": "bad request"})
 
