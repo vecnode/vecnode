@@ -940,6 +940,22 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "ubuntu22-open-silverbullet"]),
             },
             CommandItem {
+                label: "vn run ubuntu22-open-stirling-pdf",
+                action: Action::Execute(vec!["run", "ubuntu22-open-stirling-pdf"]),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-stop-stirling-pdf",
+                action: Action::Execute(vec!["run", "ubuntu22-stop-stirling-pdf"]),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-clear-stirling-pdf-container",
+                action: Action::Execute(vec!["run", "ubuntu22-clear-stirling-pdf-container"]),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-clear-stirling-pdf-image",
+                action: Action::Execute(vec!["run", "ubuntu22-clear-stirling-pdf-image"]),
+            },
+            CommandItem {
                 label: "vn run ubuntu22-open-media-processor",
                 action: Action::Execute(vec!["run", "ubuntu22-open-media-processor"]),
             },
@@ -1076,6 +1092,22 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
             CommandItem {
                 label: "vn run win11-open-silverbullet",
                 action: Action::Execute(vec!["run", "win11-open-silverbullet"]),
+            },
+            CommandItem {
+                label: "vn run win11-open-stirling-pdf",
+                action: Action::Execute(vec!["run", "win11-open-stirling-pdf"]),
+            },
+            CommandItem {
+                label: "vn run win11-stop-stirling-pdf",
+                action: Action::Execute(vec!["run", "win11-stop-stirling-pdf"]),
+            },
+            CommandItem {
+                label: "vn run win11-clear-stirling-pdf-container",
+                action: Action::Execute(vec!["run", "win11-clear-stirling-pdf-container"]),
+            },
+            CommandItem {
+                label: "vn run win11-clear-stirling-pdf-image",
+                action: Action::Execute(vec!["run", "win11-clear-stirling-pdf-image"]),
             },
             CommandItem {
                 label: "vn run win11-open-media-processor",
