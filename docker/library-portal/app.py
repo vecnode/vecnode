@@ -212,6 +212,19 @@ select,.toggle button{{padding:11px 13px;font-size:14px;background:var(--surface
 .toggle{{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;}}
 .toggle button{{border:none;border-radius:0;background:var(--surface);}}
 .toggle button.active{{background:var(--accent);color:#fff;}}
+.pathbar{{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0 4px;}}
+.pathbar input{{flex:0 1 260px;padding:8px 11px;font-size:13.5px;background:var(--surface);border:1px solid var(--line);border-radius:9px;color:var(--ink);outline:none;}}
+.pathbar input:focus{{border-color:var(--accent);}}
+.pathbar .btn{{padding:8px 11px;font-size:13.5px;}}
+.crumbs{{flex:1 1 auto;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
+.crumbs a{{color:var(--accent);cursor:pointer;text-decoration:none;}}
+.crumbs a:hover{{text-decoration:underline;}}
+.crumbs .sep{{color:var(--muted);margin:0 5px;}}
+.navfolder{{cursor:pointer;}}
+.view-list .navfolder{{display:flex;align-items:center;gap:10px;padding:14px 16px;margin-bottom:10px;font-weight:600;}}
+.view-grid .navfolder{{display:flex;align-items:center;justify-content:center;gap:8px;aspect-ratio:3/4;font-weight:600;text-align:center;padding:12px;}}
+.navfolder.drop-hover{{outline:2px dashed var(--accent);outline-offset:-2px;background:#F7ECE6;}}
+.rowbtns .mv:hover{{border-color:var(--accent);color:var(--accent);}}
 .count{{color:var(--muted);font-size:13px;margin:2px 2px 18px;}}
 #list.view-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;}}
 .item{{position:relative;background:var(--surface);border:1px solid var(--line);border-radius:12px;transition:border-color .12s,transform .12s;}}
@@ -288,6 +301,12 @@ footer{{color:var(--muted);font-size:12px;margin-top:30px;text-align:center;}}
     </div>
     <button id="btnNewFolder" class="btn" type="button" style="display:none">+ New folder</button>
   </div>
+  <div id="pathbar" class="pathbar">
+    <button id="upBtn" class="btn" type="button" title="Up one folder">↑</button>
+    <span id="crumbs" class="crumbs"></span>
+    <input id="pathInput" type="text" placeholder="folder path, e.g. pdfs/Theses">
+    <button id="goBtn" class="btn" type="button">Go</button>
+  </div>
   <div id="count" class="count"></div>
   <div id="list" class="view-list">{rows}</div>
   <div id="tree" class="tree" style="display:none"></div>
@@ -338,20 +357,97 @@ footer{{color:var(--muted);font-size:12px;margin-top:30px;text-align:center;}}
   </div>
 </div>
 
+<div id="mvback" class="backdrop">
+  <div class="modal">
+    <h3>Move to folder</h3>
+    <p id="mvmsg" style="color:var(--muted);font-size:13px;margin:0 0 4px;word-break:break-word;"></p>
+    <input type="hidden" id="mv_rel">
+    <label>Destination folder</label><select id="mv_folder"></select>
+    <div class="actions">
+      <button class="btn" type="button" onclick="closeMv()">Cancel</button>
+      <button class="btn primary" type="button" onclick="confirmMove()">Move</button>
+    </div>
+  </div>
+</div>
+
+<div id="pvback" class="backdrop">
+  <div class="modal" style="max-width:400px;text-align:center;">
+    <h3 id="pv_name" style="font-size:15px;word-break:break-word;"></h3>
+    <img id="pv_img" alt="" style="max-width:100%;max-height:60vh;border:1px solid var(--line);border-radius:8px;background:#eceae1;">
+    <div class="actions" style="justify-content:center;">
+      <a id="pv_open" class="btn primary" target="_blank" rel="noopener">Open PDF</a>
+      <button class="btn" type="button" onclick="closePv()">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const FOLDERS={folders_json};
 const listEl=document.getElementById('list');
 const q=document.getElementById('q'), sortEl=document.getElementById('sort');
 const countEl=document.getElementById('count'), emptyEl=document.getElementById('empty');
 let items=Array.from(document.querySelectorAll('.item'));
-
-function apply(){{
-  const term=q.value.trim().toLowerCase();
+const FOLDERSET=new Set(FOLDERS);
+let cwd=localStorage.getItem('lp_cwd')||'';
+if(cwd && !FOLDERSET.has(cwd)) cwd='';
+function parentOf(f){{ const i=f.lastIndexOf('/'); return i<0?'':f.slice(0,i); }}
+function childFoldersOf(dir){{ return FOLDERS.filter(f=>parentOf(f)===dir).sort(); }}
+function inTree(){{ return document.getElementById('btnTree').classList.contains('active'); }}
+function bindDropFolder(el,folderRel){{
+  el.addEventListener('dragover',e=>{{e.preventDefault();el.classList.add('drop-hover');}});
+  el.addEventListener('dragleave',()=>el.classList.remove('drop-hover'));
+  el.addEventListener('drop',async e=>{{e.preventDefault();el.classList.remove('drop-hover');
+    const rel=e.dataTransfer.getData('text/plain'); if(!rel)return;
+    const r=await moveFile(rel,folderRel);
+    if(r.ok)location.reload(); else alert('Move failed: '+(await r.text()));
+  }});
+}}
+function navigate(dir){{
+  dir=(dir||'').replace(/^\/+|\/+$/g,'');
+  if(dir!=='' && !FOLDERSET.has(dir)){{ alert('No such folder: '+dir); return; }}
+  document.getElementById('q').value='';
+  cwd=dir; localStorage.setItem('lp_cwd',cwd); apply();
+}}
+function renderNav(){{
+  const crumbs=document.getElementById('crumbs');
+  let acc='', h='<a data-go="">library</a>';
+  for(const p of (cwd?cwd.split('/'):[])){{ acc=acc?acc+'/'+p:p; h+='<span class="sep">/</span><a data-go="'+escapeHtml(acc)+'">'+escapeHtml(p)+'</a>'; }}
+  crumbs.innerHTML=h;
+  crumbs.querySelectorAll('a').forEach(a=>a.onclick=()=>navigate(a.dataset.go));
+  document.getElementById('pathInput').value=cwd;
+  document.getElementById('upBtn').disabled=(cwd==='');
+  listEl.querySelectorAll('.navfolder').forEach(n=>n.remove());
+  const subs=childFoldersOf(cwd);
+  const frag=document.createDocumentFragment();
+  for(const f of subs){{
+    const name=f.indexOf('/')<0?f:f.slice(f.lastIndexOf('/')+1);
+    const el=document.createElement('div'); el.className='navfolder'; el.dataset.folder=f;
+    el.innerHTML='<span>📁</span><span class="tname">'+escapeHtml(name)+'</span>';
+    el.onclick=()=>navigate(f);
+    bindDropFolder(el,f);
+    frag.appendChild(el);
+  }}
+  listEl.insertBefore(frag, listEl.firstChild);
   let shown=0;
   for(const el of items){{
-    const hit=!term||el.dataset.search.includes(term);
-    el.style.display=hit?'':'none'; if(hit)shown++;
+    const inDir=el.dataset.folder===cwd;
+    el.style.display=inDir?'':'none';
+    if(inDir){{ shown++; el.draggable=true;
+      if(!el._dragbound){{ el._dragbound=1; el.addEventListener('dragstart',e=>{{e.dataTransfer.setData('text/plain',el.dataset.rel);e.dataTransfer.effectAllowed='move';}}); }}
+    }}
   }}
+  countEl.textContent=subs.length+' folder'+(subs.length===1?'':'s')+' · '+shown+' file'+(shown===1?'':'s');
+  emptyEl.style.display=(subs.length+shown)?'none':'';
+}}
+function apply(){{
+  if(inTree()) return;
+  const term=q.value.trim().toLowerCase();
+  if(!term){{ renderNav(); return; }}
+  listEl.querySelectorAll('.navfolder').forEach(n=>n.remove());
+  document.getElementById('crumbs').innerHTML='<span style="color:var(--muted)">search across all folders</span>';
+  document.getElementById('pathInput').value='';
+  let shown=0;
+  for(const el of items){{ const hit=el.dataset.search.includes(term); el.style.display=hit?'':'none'; if(hit)shown++; }}
   countEl.textContent=shown+(shown===1?' result':' results');
   emptyEl.style.display=shown?'none':'';
 }}
@@ -370,12 +466,12 @@ function sortItems(){{
 }}
 function escapeHtml(s){{return (s||'').replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c]));}}
 function setView(mode){{
-  const list=document.getElementById('list'),tree=document.getElementById('tree'),nf=document.getElementById('btnNewFolder');
+  const list=document.getElementById('list'),tree=document.getElementById('tree'),nf=document.getElementById('btnNewFolder'),pb=document.getElementById('pathbar');
   document.getElementById('btnList').classList.toggle('active',mode==='list');
   document.getElementById('btnGrid').classList.toggle('active',mode==='grid');
   document.getElementById('btnTree').classList.toggle('active',mode==='tree');
-  if(mode==='tree'){{ list.style.display='none'; nf.style.display=''; tree.style.display=''; buildTree(); }}
-  else {{ tree.style.display='none'; nf.style.display='none'; list.style.display=''; list.className=(mode==='grid')?'view-grid':'view-list'; }}
+  if(mode==='tree'){{ list.style.display='none'; nf.style.display=''; pb.style.display='none'; tree.style.display=''; buildTree(); }}
+  else {{ tree.style.display='none'; nf.style.display='none'; pb.style.display='flex'; list.style.display=''; list.className=(mode==='grid')?'view-grid':'view-list'; apply(); }}
   localStorage.setItem('lp_view',mode);
 }}
 function moveFile(rel,folder){{
@@ -405,9 +501,11 @@ function mkFileRow(fl,depth){{
   const row=document.createElement('div'); row.className='trow tfile';
   row.style.paddingLeft=(depth*18+24)+'px'; row.draggable=true;
   row.addEventListener('dragstart',e=>{{e.dataTransfer.setData('text/plain',fl.rel);e.dataTransfer.effectAllowed='move';}});
-  const href='/view/'+fl.rel.split('/').map(encodeURIComponent).join('/');
-  row.innerHTML='<span>📄</span><span class="tname"><a href="'+href+'" target="_blank" rel="noopener">'+escapeHtml(fl.name)+'</a></span><span class="tsize">'+escapeHtml(fl.size)+'</span><button class="tx" type="button">Delete</button>';
-  row.querySelector('.tx').onclick=e=>{{e.preventDefault();e.stopPropagation();openDeleteRel(fl.rel,fl.name);}};
+  row.innerHTML='<span>📄</span><span class="tname">'+escapeHtml(fl.name)+'</span><span class="tsize">'+escapeHtml(fl.size)+'</span>'
+    +'<button class="tx bmv" type="button">Move</button><button class="tx bdel" type="button">Delete</button>';
+  row.querySelector('.bmv').onclick=e=>{{e.preventDefault();e.stopPropagation();openMv(fl.rel,fl.name);}};
+  row.querySelector('.bdel').onclick=e=>{{e.preventDefault();e.stopPropagation();openDeleteRel(fl.rel,fl.name);}};
+  row.addEventListener('click',e=>{{ if(e.target.closest('button'))return; openPreview(fl.rel,fl.name); }});
   return row;
 }}
 function renderNode(node,base,depth,into){{
@@ -453,6 +551,37 @@ sortEl.addEventListener('change',()=>{{sortItems();apply();}});
 document.getElementById('btnList').onclick=()=>setView('list');
 document.getElementById('btnGrid').onclick=()=>setView('grid');
 document.getElementById('btnTree').onclick=()=>setView('tree');
+
+// path bar
+document.getElementById('goBtn').onclick=()=>navigate(document.getElementById('pathInput').value);
+document.getElementById('pathInput').addEventListener('keydown',e=>{{if(e.key==='Enter')navigate(e.target.value);}});
+document.getElementById('upBtn').onclick=()=>navigate(parentOf(cwd));
+
+// move modal
+function openMv(rel,file){{
+  document.getElementById('mv_rel').value=rel;
+  document.getElementById('mvmsg').textContent='Move "'+file+'" to:';
+  document.getElementById('mv_folder').innerHTML='<option value="">library/ (root)</option>'+FOLDERS.map(f=>'<option value="'+escapeHtml(f)+'">'+escapeHtml(f)+'</option>').join('');
+  document.getElementById('mvback').classList.add('show');
+}}
+function closeMv(){{document.getElementById('mvback').classList.remove('show');}}
+async function confirmMove(){{
+  const r=await moveFile(document.getElementById('mv_rel').value, document.getElementById('mv_folder').value);
+  if(r.ok)location.reload(); else alert('Move failed: '+(await r.text()));
+}}
+document.querySelectorAll('.mv').forEach(b=>b.onclick=e=>{{e.preventDefault();e.stopPropagation();const it=b.closest('.item');openMv(it.dataset.rel,it.dataset.file);}});
+document.getElementById('mvback').addEventListener('click',e=>{{if(e.target.id==='mvback')closeMv();}});
+
+// preview modal (tree thumbnail on click)
+function openPreview(rel,file){{
+  const enc='/'+rel.split('/').map(encodeURIComponent).join('/');
+  document.getElementById('pv_name').textContent=file;
+  document.getElementById('pv_img').src='/thumb'+enc;
+  document.getElementById('pv_open').href='/view'+enc;
+  document.getElementById('pvback').classList.add('show');
+}}
+function closePv(){{document.getElementById('pvback').classList.remove('show');}}
+document.getElementById('pvback').addEventListener('click',e=>{{if(e.target.id==='pvback')closePv();}});
 
 function openModal(el){{
   document.getElementById('m_rel').value=el.dataset.rel;
@@ -523,11 +652,12 @@ def render_index() -> str:
         a = lambda s: html.escape(s, quote=True)
         rows.append(
             f'<div class="item" data-rel="{a(it["rel"])}" data-file="{a(it["file"])}" '
-            f'data-size="{a(human_size(it["size"]))}" '
+            f'data-folder="{a(it["folder"])}" data-size="{a(human_size(it["size"]))}" '
             f'data-title="{a(it["title"].lower())}" data-title-raw="{a(it["title"])}" '
             f'data-year="{a(it["year"])}" data-author="{a(it["author"])}" '
             f'data-tags="{a(" ".join(tags))}" data-search="{a(search)}">'
             f'<div class="rowbtns"><button class="edit" type="button">Edit</button>'
+            f'<button class="mv" type="button">Move</button>'
             f'<button class="del" type="button">Delete</button></div>'
             f'<a class="open" href="{href}" target="_blank" rel="noopener">'
             f'<img class="thumb" loading="lazy" src="{thumb}" alt="">'
