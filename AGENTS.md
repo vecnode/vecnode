@@ -153,20 +153,25 @@ handled globally by the Docker submenu's "remove containers" / "remove images". 
   `docker start`s a stopped one.
 - **stop**: `docker stop` the container but keep it (fast reopen).
 
-Examples: SilverBullet (`ghcr.io/silverbulletmd/silverbullet`, port 3000), Stirling-PDF
-(`stirlingtools/stirling-pdf`, port 8080), and PdfDing (`mrmn/pdfding`, port 8000).
-To add another app, copy the Stirling-PDF open/stop script pair, change the
-image/port/container name, add the `run.rs` mappings, and add the `CommandItem`s to both
-Open submenus.
+Most apps pull a published image (SilverBullet `ghcr.io/silverbulletmd/silverbullet` port
+3000, Stirling-PDF `stirlingtools/stirling-pdf` port 8080). One app is built locally:
+**library-portal** (port 8090). To add a pulled-image app, copy the Stirling-PDF open/stop
+script pair, change the image/port/container name, add the `run.rs` mappings, and add the
+`CommandItem`s to both Open submenus.
 
-**PdfDing (PDF manager):** `run_pdfding.*` runs `mrmn/pdfding` and keeps persistent data
-in the repo's gitignored `library/.pdfding-data/` — `db/` (sqlite) and `media/` (uploaded
-PDFs) are bind-mounted to `/home/nonroot/pdfding/{db,media}`, so nothing reaches GitHub. A
-stable `SECRET_KEY` is generated once into `library/.pdfding-data/secret_key.txt` and
-reused; it runs with `HOST_NAME=127.0.0.1` and `CSRF/SESSION_COOKIE_SECURE=FALSE` for plain
-local HTTP. PdfDing is **upload-based** (no folder ingestion): on first run the user creates
-an account, then uploads PDFs (e.g. from `library/pdfs/`) through the web UI. On Linux the
-non-root container may need the data dirs made writable (`chmod -R 777 library/.pdfding-data`).
+**library-portal (custom, locally built):** a lightweight viewer/manager for the repo's
+`library/` folder, living in [docker/library-portal/](docker/library-portal/) —
+`python:3.12-slim` + a single stdlib `app.py`, plus PyMuPDF for thumbnails.
+`run_library_portal.*` `docker build`s the image (the build context is only
+`docker/library-portal/`, so **no PDFs enter the image**), then runs it with the repo
+`library/` bind-mounted on port 8090 and opens Chrome. The server walks `/library` per
+request and renders an Anthropic-style index, streaming PDFs inline for the browser viewer.
+It supports edit/rename, per-document tags, delete, list/grid/tree views, sort, and (in tree
+view) creating folders and drag-and-drop moving PDFs into them. App state
+(metadata overrides + tags) is kept in `library/.portal/portal.json` and thumbnails are
+cached under `library/.portal/thumbs/` (both gitignored, hidden from the listing); PDFs are
+only modified on an explicit rename. `open` rebuilds + recreates the container each time
+(picks up `app.py` edits).
 
 Note on `.bat`: inside an `if (…) else (…)` block, any literal `(`/`)` in an `echo`
 must be escaped as `^(`/`^)` (or avoided) — an unescaped `)` closes the block early and
