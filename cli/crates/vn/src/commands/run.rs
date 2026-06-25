@@ -82,12 +82,6 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "ubuntu22-stop-stirling-pdf" => ScriptTarget {
             relative_path: "scripts/ubuntu22/stop_stirling_pdf.sh",
         },
-        "ubuntu22-clear-stirling-pdf-container" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/clear_stirling_pdf_container.sh",
-        },
-        "ubuntu22-clear-stirling-pdf-image" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/clear_stirling_pdf_image.sh",
-        },
         "ubuntu22-check-ollama" => ScriptTarget {
             relative_path: "scripts/ubuntu22/check_ollama.sh",
         },
@@ -243,12 +237,6 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         },
         "win11-stop-stirling-pdf" => ScriptTarget {
             relative_path: "scripts/win11/stop_stirling_pdf.bat",
-        },
-        "win11-clear-stirling-pdf-container" => ScriptTarget {
-            relative_path: "scripts/win11/clear_stirling_pdf_container.bat",
-        },
-        "win11-clear-stirling-pdf-image" => ScriptTarget {
-            relative_path: "scripts/win11/clear_stirling_pdf_image.bat",
         },
         "win11-open-media-processor" => ScriptTarget {
             relative_path: "scripts/win11/open_media_processor.bat",
