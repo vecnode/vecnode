@@ -2,13 +2,12 @@
 setlocal EnableExtensions
 
 REM ---------------------------------------------------------------------------
-REM stop_pdfding.bat
-REM Stop the PdfDing container. The container is kept (not removed), so it can be
-REM reopened quickly with run_pdfding.bat. Your library/.pdfding-data/ (db +
-REM uploaded PDFs) is untouched.
+REM stop_library_portal.bat
+REM Stop the library-portal container. It holds no state (the library is mounted
+REM read-only), so this just stops it; reopen rebuilds and runs it fresh.
 REM ---------------------------------------------------------------------------
 
-set "CONTAINER=pdfding"
+set "CONTAINER=library-portal"
 
 where docker >nul 2>nul
 if errorlevel 1 (
@@ -30,5 +29,5 @@ if errorlevel 1 (
     exit /b 1
 )
 
-echo [OK] Stopped '%CONTAINER%'. It is kept and can be reopened.
+echo [OK] Stopped '%CONTAINER%'.
 exit /b 0

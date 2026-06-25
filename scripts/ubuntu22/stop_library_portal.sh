@@ -2,13 +2,12 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# stop_pdfding.sh
-# Stop the PdfDing container. The container is kept (not removed), so it can be
-# reopened quickly with run_pdfding.sh. Your library/.pdfding-data/ (db +
-# uploaded PDFs) is untouched.
+# stop_library_portal.sh
+# Stop the library-portal container. It holds no state (the library is mounted
+# read-only), so this just stops it; reopen rebuilds and runs it fresh.
 # ---------------------------------------------------------------------------
 
-CONTAINER="pdfding"
+CONTAINER="library-portal"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[ERROR] Docker is not available or not in PATH."
@@ -22,5 +21,5 @@ fi
 
 echo "[INFO] Stopping '${CONTAINER}'..."
 docker stop "${CONTAINER}" >/dev/null
-echo "[OK] Stopped '${CONTAINER}'. It is kept and can be reopened."
+echo "[OK] Stopped '${CONTAINER}'."
 exit 0

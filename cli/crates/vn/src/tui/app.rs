@@ -948,12 +948,12 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "ubuntu22-stop-stirling-pdf"]),
             },
             CommandItem {
-                label: "vn run ubuntu22-open-pdfding",
-                action: Action::Execute(vec!["run", "ubuntu22-open-pdfding"]),
+                label: "vn run ubuntu22-open-library-portal",
+                action: Action::Execute(vec!["run", "ubuntu22-open-library-portal"]),
             },
             CommandItem {
-                label: "vn run ubuntu22-stop-pdfding",
-                action: Action::Execute(vec!["run", "ubuntu22-stop-pdfding"]),
+                label: "vn run ubuntu22-stop-library-portal",
+                action: Action::Execute(vec!["run", "ubuntu22-stop-library-portal"]),
             },
             CommandItem {
                 label: "vn run ubuntu22-open-media-processor",
@@ -1102,12 +1102,12 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "win11-stop-stirling-pdf"]),
             },
             CommandItem {
-                label: "vn run win11-open-pdfding",
-                action: Action::Execute(vec!["run", "win11-open-pdfding"]),
+                label: "vn run win11-open-library-portal",
+                action: Action::Execute(vec!["run", "win11-open-library-portal"]),
             },
             CommandItem {
-                label: "vn run win11-stop-pdfding",
-                action: Action::Execute(vec!["run", "win11-stop-pdfding"]),
+                label: "vn run win11-stop-library-portal",
+                action: Action::Execute(vec!["run", "win11-stop-library-portal"]),
             },
             CommandItem {
                 label: "vn run win11-open-media-processor",
