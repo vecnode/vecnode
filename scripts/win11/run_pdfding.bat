@@ -2,27 +2,28 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 REM ---------------------------------------------------------------------------
-REM run_papra.bat
-REM Open the Papra document app in Docker, then launch Chrome at its port.
-REM Mounts the repo's gitignored library/ as Papra's ingestion folder and keeps
-REM Papra's own data in library/.papra-data/ (never pushed to GitHub).
+REM run_pdfding.bat
+REM Open the PdfDing PDF manager in Docker, then launch Chrome at its port.
+REM Persistent data (sqlite db + uploaded PDFs) is kept in the repo's gitignored
+REM library/.pdfding-data/ so it never reaches GitHub. PDFs are added through the
+REM PdfDing web UI (it is upload-based, not a watched folder).
 REM
-REM Image: ghcr.io/papra-hq/papra:latest   UI: http://localhost:1221
+REM Image: mrmn/pdfding:latest   UI: http://localhost:8000
 REM Requirements (Windows): docker
 REM ---------------------------------------------------------------------------
 
-set "IMAGE=ghcr.io/papra-hq/papra:latest"
-set "CONTAINER=papra"
-set "PORT=1221"
-set "URL=http://localhost:1221"
+set "IMAGE=mrmn/pdfding:latest"
+set "CONTAINER=pdfding"
+set "PORT=8000"
+set "URL=http://localhost:8000"
 
 for %%I in ("%~dp0..\..") do set "REPO_ROOT=%%~fI"
-set "LIB=%REPO_ROOT%\library"
-set "DATA=%LIB%\.papra-data"
-set "SECRET_FILE=%DATA%\auth_secret.txt"
-set "IGNORED=**/.DS_Store,**/.env,**/desktop.ini,**/Thumbs.db,**/.git/**,**/.idea/**,**/.vscode/**,**/node_modules/**,**/@eaDir/**,**/*@SynoResource,**/*@SynoEAStream,**/.papra-data/**"
+set "DATA=%REPO_ROOT%\library\.pdfding-data"
+set "DBDIR=%DATA%\db"
+set "MEDIADIR=%DATA%\media"
+set "SECRET_FILE=%DATA%\secret_key.txt"
 
-echo [INFO] Papra (Docker)
+echo [INFO] PdfDing (Docker)
 echo.
 
 REM --- Docker availability ---
@@ -39,23 +40,24 @@ if errorlevel 1 (
 )
 echo [OK] Docker daemon is running.
 
-REM --- Folders (library/ is the ingestion inbox; .papra-data/ is Papra's store) ---
-if not exist "%LIB%" mkdir "%LIB%" >nul 2>nul
+REM --- Persistent data folders (gitignored, under library/) ---
 if not exist "%DATA%" mkdir "%DATA%" >nul 2>nul
+if not exist "%DBDIR%" mkdir "%DBDIR%" >nul 2>nul
+if not exist "%MEDIADIR%" mkdir "%MEDIADIR%" >nul 2>nul
 
-REM --- AUTH_SECRET: generate once and persist so logins/data survive restarts ---
+REM --- SECRET_KEY: generate once and persist so sessions survive restarts ---
 if not exist "%SECRET_FILE%" goto :gen_secret
 goto :read_secret
 
 :gen_secret
-echo [INFO] Generating a persistent AUTH_SECRET...
+echo [INFO] Generating a persistent SECRET_KEY...
 powershell -NoProfile -Command "[IO.File]::WriteAllText('%SECRET_FILE%', [guid]::NewGuid().ToString('N')+[guid]::NewGuid().ToString('N')+[guid]::NewGuid().ToString('N'))"
 
 :read_secret
-set "AUTH_SECRET="
-set /p AUTH_SECRET=<"%SECRET_FILE%"
-if not defined AUTH_SECRET (
-    echo [ERROR] Could not read AUTH_SECRET from %SECRET_FILE%
+set "SECRET_KEY="
+set /p SECRET_KEY=<"%SECRET_FILE%"
+if not defined SECRET_KEY (
+    echo [ERROR] Could not read SECRET_KEY from %SECRET_FILE%
     exit /b 1
 )
 
@@ -83,28 +85,28 @@ if defined EXISTS (
 )
 
 echo [INFO] Running image '%IMAGE%'. First run downloads it; this can take a while...
-docker run -d --name %CONTAINER% -p %PORT%:1221 -e APP_BASE_URL=%URL% -e AUTH_SECRET=%AUTH_SECRET% -e INGESTION_FOLDER_IS_ENABLED=true -e INGESTION_FOLDER_ROOT_PATH=/app/ingestion -e INGESTION_FOLDER_WATCHER_USE_POLLING=true -e INGESTION_FOLDER_POST_PROCESSING_STRATEGY=move -e INGESTION_FOLDER_POST_PROCESSING_MOVE_FOLDER_PATH=./_ingested -e "INGESTION_FOLDER_IGNORED_PATTERNS=%IGNORED%" -v "%LIB%:/app/ingestion" -v "%DATA%:/app/app-data" %IMAGE% >nul 2>nul
+docker run -d --name %CONTAINER% -p %PORT%:8000 -e HOST_NAME=127.0.0.1 -e SECRET_KEY=%SECRET_KEY% -e CSRF_COOKIE_SECURE=FALSE -e SESSION_COOKIE_SECURE=FALSE -v "%DBDIR%:/home/nonroot/pdfding/db" -v "%MEDIADIR%:/home/nonroot/pdfding/media" %IMAGE% >nul 2>nul
 if errorlevel 1 (
-    echo [ERROR] Failed to start Papra container.
+    echo [ERROR] Failed to start PdfDing container.
     exit /b 1
 )
 
 :wait
-echo [INFO] Waiting for Papra to become ready at %URL% ...
+echo [INFO] Waiting for PdfDing to become ready at %URL% ...
 set /a TRIES=0
 :wait_loop
 set /a TRIES+=1
 curl -s -o nul -m 3 "%URL%" >nul 2>nul
 if not errorlevel 1 goto :ready
 if !TRIES! GEQ 30 (
-    echo [WARNING] Papra did not respond yet; opening the browser anyway.
+    echo [WARNING] PdfDing did not respond yet; opening the browser anyway.
     goto :open
 )
 ping -n 3 127.0.0.1 >nul 2>nul
 goto :wait_loop
 
 :ready
-echo [OK] Papra is ready.
+echo [OK] PdfDing is ready.
 
 :open
 REM Prefer Chrome; fall back to the default browser if Chrome is not installed.
@@ -123,9 +125,8 @@ if defined CHROME (
 
 echo.
 echo [INFO] Open:  %URL%
-echo [INFO] First time: sign up, create an organization, then put PDFs in library\^<org-slug^>\
-echo [INFO] Imported files are moved to library\^<org-slug^>\_ingested\
-echo [INFO] Stop with:  vn run win11-stop-papra  ^(or: docker stop %CONTAINER%^)
+echo [INFO] First time: create an account, then upload PDFs from library\pdfs\ via the web UI.
+echo [INFO] Stop with:  vn run win11-stop-pdfding  ^(or: docker stop %CONTAINER%^)
 echo [INFO] Logs with:  docker logs -f %CONTAINER%
 endlocal
 exit /b 0

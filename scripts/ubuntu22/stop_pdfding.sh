@@ -2,13 +2,13 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# stop_papra.sh
-# Stop the Papra container. The container is kept (not removed), so it can be
-# reopened quickly with run_papra.sh. Your library/ and library/.papra-data/
-# are untouched.
+# stop_pdfding.sh
+# Stop the PdfDing container. The container is kept (not removed), so it can be
+# reopened quickly with run_pdfding.sh. Your library/.pdfding-data/ (db +
+# uploaded PDFs) is untouched.
 # ---------------------------------------------------------------------------
 
-CONTAINER="papra"
+CONTAINER="pdfding"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "[ERROR] Docker is not available or not in PATH."
