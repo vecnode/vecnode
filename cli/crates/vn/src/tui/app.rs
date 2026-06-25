@@ -948,6 +948,14 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "ubuntu22-stop-stirling-pdf"]),
             },
             CommandItem {
+                label: "vn run ubuntu22-open-papra",
+                action: Action::Execute(vec!["run", "ubuntu22-open-papra"]),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-stop-papra",
+                action: Action::Execute(vec!["run", "ubuntu22-stop-papra"]),
+            },
+            CommandItem {
                 label: "vn run ubuntu22-open-media-processor",
                 action: Action::Execute(vec!["run", "ubuntu22-open-media-processor"]),
             },
@@ -1092,6 +1100,14 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
             CommandItem {
                 label: "vn run win11-stop-stirling-pdf",
                 action: Action::Execute(vec!["run", "win11-stop-stirling-pdf"]),
+            },
+            CommandItem {
+                label: "vn run win11-open-papra",
+                action: Action::Execute(vec!["run", "win11-open-papra"]),
+            },
+            CommandItem {
+                label: "vn run win11-stop-papra",
+                action: Action::Execute(vec!["run", "win11-stop-papra"]),
             },
             CommandItem {
                 label: "vn run win11-open-media-processor",

@@ -82,6 +82,12 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "ubuntu22-stop-stirling-pdf" => ScriptTarget {
             relative_path: "scripts/ubuntu22/stop_stirling_pdf.sh",
         },
+        "ubuntu22-open-papra" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/run_papra.sh",
+        },
+        "ubuntu22-stop-papra" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/stop_papra.sh",
+        },
         "ubuntu22-check-ollama" => ScriptTarget {
             relative_path: "scripts/ubuntu22/check_ollama.sh",
         },
@@ -237,6 +243,12 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         },
         "win11-stop-stirling-pdf" => ScriptTarget {
             relative_path: "scripts/win11/stop_stirling_pdf.bat",
+        },
+        "win11-open-papra" => ScriptTarget {
+            relative_path: "scripts/win11/run_papra.bat",
+        },
+        "win11-stop-papra" => ScriptTarget {
+            relative_path: "scripts/win11/stop_papra.bat",
         },
         "win11-open-media-processor" => ScriptTarget {
             relative_path: "scripts/win11/open_media_processor.bat",

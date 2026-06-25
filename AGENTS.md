@@ -153,10 +153,20 @@ handled globally by the Docker submenu's "remove containers" / "remove images". 
   `docker start`s a stopped one.
 - **stop**: `docker stop` the container but keep it (fast reopen).
 
-Examples: SilverBullet (`ghcr.io/silverbulletmd/silverbullet`, port 3000) and
-Stirling-PDF (`stirlingtools/stirling-pdf`, port 8080). To add another app, copy the
-Stirling-PDF open/stop script pair, change the image/port/container name, add the
-`run.rs` mappings, and add the `CommandItem`s to both Open submenus.
+Examples: SilverBullet (`ghcr.io/silverbulletmd/silverbullet`, port 3000), Stirling-PDF
+(`stirlingtools/stirling-pdf`, port 8080), and Papra (`ghcr.io/papra-hq/papra`, port 1221).
+To add another app, copy the Stirling-PDF open/stop script pair, change the
+image/port/container name, add the `run.rs` mappings, and add the `CommandItem`s to both
+Open submenus.
+
+**Papra + the local `library/`:** `run_papra.*` mounts the repo's gitignored `library/`
+as Papra's ingestion folder (`/app/ingestion`) and keeps Papra's own store in
+`library/.papra-data/` (`/app/app-data`) — both stay out of GitHub. A stable `AUTH_SECRET`
+is generated once into `library/.papra-data/auth_secret.txt` and reused. Papra ingests
+files **per organization**, so on first run the user signs up, creates an organization in
+the web UI, then drops PDFs in `library/<org-slug>/`; imported originals are moved to
+`library/<org-slug>/_ingested/` (post-processing `move`). `.papra-data/` is added to
+`INGESTION_FOLDER_IGNORED_PATTERNS` so Papra never tries to ingest its own data.
 
 Note on `.bat`: inside an `if (…) else (…)` block, any literal `(`/`)` in an `echo`
 must be escaped as `^(`/`^)` (or avoided) — an unescaped `)` closes the block early and
