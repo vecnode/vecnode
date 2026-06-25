@@ -52,7 +52,7 @@ if defined EXISTS (
         exit /b 1
     )
 ) else (
-    echo [INFO] Running image '%IMAGE%' (first run downloads it, this can take a while)...
+    echo [INFO] Running image '%IMAGE%'. First run downloads it; this can take a while...
     docker run -d --name %CONTAINER% -p %PORT%:8080 %IMAGE% >nul 2>nul
     if errorlevel 1 (
         echo [ERROR] Failed to start Stirling-PDF container.
