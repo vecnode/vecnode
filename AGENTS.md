@@ -140,6 +140,25 @@ routed to `vn ai pull` / `vn ai chat`. Output streams into the CLI Output panel 
 session log file like any other command. The Ollama *server* itself still needs to be
 installed/running — that is what the `check-ollama` / `open-ollama` scripts handle.
 
+## Dockerized apps (Open menu)
+
+The TUI **Open** submenu launches/controls self-hosted web apps in Docker. Each app is a
+matched pair of `scripts/win11/*.bat` + `scripts/ubuntu22/*.sh`, wired through `run.rs`
+and `menu_items`. The standard shape per app:
+
+- **open** (e.g. `run_stirling_pdf`): check Docker, then run/start the container (the
+  image is pulled on first run), wait for the port to respond, and open the web UI in
+  **Chrome** (falling back to the default browser). Reuses a running container and
+  `docker start`s a stopped one.
+- **stop**: `docker stop` the container but keep it (fast reopen).
+- **clear container**: `docker rm -f` the container (image kept).
+- **clear image**: `docker rmi` the image to free space / force a fresh pull.
+
+Examples: SilverBullet (`ghcr.io/silverbulletmd/silverbullet`, port 3000) and
+Stirling-PDF (`stirlingtools/stirling-pdf`, port 8080). To add another app, copy the
+Stirling-PDF script set, change the image/port/container name, add the `run.rs` mappings,
+and add the `CommandItem`s to both Open submenus.
+
 ## Conventions
 
 - Match the surrounding style: `anyhow::Result` with `.context(...)`, `cfg!`/`#[cfg]`
