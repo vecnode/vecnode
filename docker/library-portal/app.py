@@ -222,7 +222,11 @@ select,.toggle button{{padding:11px 13px;font-size:14px;background:var(--surface
 .crumbs .sep{{color:var(--muted);margin:0 5px;}}
 .navfolder{{cursor:pointer;}}
 .view-list .navfolder{{display:flex;align-items:center;gap:10px;padding:14px 16px;margin-bottom:10px;font-weight:600;}}
-.view-grid .navfolder{{display:flex;align-items:center;justify-content:center;gap:8px;aspect-ratio:3/4;font-weight:600;text-align:center;padding:12px;}}
+.view-grid .navfolder{{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;aspect-ratio:3/4;
+  font-weight:600;text-align:center;padding:14px;word-break:break-word;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;transition:border-color .12s,transform .12s;}}
+.view-grid .navfolder:hover{{border-color:var(--accent);transform:translateY(-1px);}}
+.view-grid .navfolder span:first-child{{font-size:38px;line-height:1;}}
 .navfolder.drop-hover{{outline:2px dashed var(--accent);outline-offset:-2px;background:#F7ECE6;}}
 .rowbtns .mv:hover{{border-color:var(--accent);color:var(--accent);}}
 .count{{color:var(--muted);font-size:13px;margin:2px 2px 18px;}}
@@ -239,7 +243,7 @@ select,.toggle button{{padding:11px 13px;font-size:14px;background:var(--surface
 .view-grid .open{{display:block;padding:0;}}
 .view-grid .thumb{{display:block;width:100%;aspect-ratio:3/4;object-fit:cover;background:#eceae1;border-radius:12px 12px 0 0;border-bottom:1px solid var(--line);}}
 .view-grid .body{{padding:10px 12px 12px;}}
-.view-grid .year{{color:var(--accent);font-weight:600;font-size:12.5px;}}
+.view-grid .year{{color:var(--accent);font-weight:600;font-size:12.5px;padding:6px 12px 0;}}
 .view-grid .size,.view-grid .meta{{display:none;}}
 .open{{text-decoration:none;color:inherit;display:contents;}}
 .title{{font-size:15.5px;font-weight:500;word-break:break-word;}}
