@@ -1265,9 +1265,13 @@ fn event_loop(
                 .split(frame.area());
 
             let active_model = app.selected_model.clone().unwrap_or_else(|| "default".to_string());
-            let header = Paragraph::new(format!("vecnode vn    |    AI model: {}", active_model))
-                .style(Style::default().add_modifier(Modifier::BOLD))
-                .block(Block::default().borders(Borders::ALL).title("CLI"));
+            let today = Local::now().format("%Y-%m-%d");
+            let header = Paragraph::new(format!(
+                "vecnode vn    |    AI model: {}    |    Date: {}",
+                active_model, today
+            ))
+            .style(Style::default().add_modifier(Modifier::BOLD))
+            .block(Block::default().borders(Borders::ALL).title("CLI"));
 
             let middle = Layout::default()
                 .direction(Direction::Horizontal)
