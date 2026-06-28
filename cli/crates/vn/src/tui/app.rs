@@ -6,7 +6,7 @@ use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Row, Table};
 use ratatui::Terminal;
 use chrono::Local;
 use std::env;
@@ -26,14 +26,12 @@ enum MenuKind {
     RunUbuntu22Network,
     RunUbuntu22Dependencies,
     RunUbuntu22Github,
-    RunUbuntu22Docker,
     RunUbuntu22Open,
     RunUbuntu22Ai,
     RunWin11,
     RunWin11Network,
     RunWin11Dependencies,
     RunWin11Github,
-    RunWin11Docker,
     RunWin11Open,
     RunWin11Ai,
     RunWin11Dotfiles,
@@ -85,8 +83,8 @@ enum Focus {
 
 struct DockerPanelData {
     available: bool,
-    images: Vec<String>,
-    ports: Vec<String>,
+    /// One row per running container: (port, image, container name).
+    rows: Vec<(String, String, String)>,
 }
 
 struct RunningProcess {
@@ -139,8 +137,7 @@ impl AppState {
             last_log_count: 1,
             docker_panel: DockerPanelData {
                 available: false,
-                images: Vec::new(),
-                ports: Vec::new(),
+                rows: Vec::new(),
             },
             log_file,
             selected_model: None,
@@ -195,85 +192,44 @@ impl AppState {
     }
 
     fn refresh_docker_panel(&mut self) {
-        let images_out = Command::new("docker")
-            .args(["images", "--format", "{{.Repository}}:{{.Tag}}"])
+        // One line per running container: ports, image and name.
+        let out = Command::new("docker")
+            .args(["ps", "--format", "{{.Ports}}\t{{.Image}}\t{{.Names}}"])
             .output();
 
-        let images_out = match images_out {
+        let out = match out {
             Ok(out) if out.status.success() => out,
             _ => {
                 self.docker_panel.available = false;
-                self.docker_panel.images.clear();
-                self.docker_panel.ports.clear();
+                self.docker_panel.rows.clear();
                 return;
             }
         };
 
-        let ports_out = Command::new("docker")
-            .args(["ps", "--format", "{{.Ports}}"])
-            .output();
-
-        let ports_out = match ports_out {
-            Ok(out) if out.status.success() => out,
-            _ => {
-                self.docker_panel.available = false;
-                self.docker_panel.images.clear();
-                self.docker_panel.ports.clear();
-                return;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let mut rows: Vec<(String, String, String)> = Vec::new();
+        for line in text.lines() {
+            let line = line.trim_end();
+            if line.is_empty() {
+                continue;
             }
-        };
+            let mut parts = line.splitn(3, '\t');
+            let ports_raw = parts.next().unwrap_or("");
+            let image = parts.next().unwrap_or("").to_string();
+            let name = parts.next().unwrap_or("").to_string();
 
-        let images_text = String::from_utf8_lossy(&images_out.stdout);
-        let mut images: Vec<String> = images_text
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty() && *line != "<none>:<none>")
-            .take(6)
-            .map(ToOwned::to_owned)
-            .collect();
-        images.sort();
-        images.dedup();
-
-        let ports_text = String::from_utf8_lossy(&ports_out.stdout);
-        let mut ports: Vec<String> = ports_text
-            .lines()
-            .flat_map(extract_host_ports)
-            .collect();
-        ports.sort();
-        ports.dedup();
+            let host_ports = extract_host_ports(ports_raw);
+            let port = if host_ports.is_empty() {
+                "-".to_string()
+            } else {
+                host_ports.join(",")
+            };
+            rows.push((port, image, name));
+        }
+        rows.sort_by(|a, b| a.2.cmp(&b.2));
 
         self.docker_panel.available = true;
-        self.docker_panel.images = images;
-        self.docker_panel.ports = ports;
-    }
-
-    fn docker_panel_lines(&self) -> Vec<Line<'static>> {
-        if !self.docker_panel.available {
-            return vec![Line::from("Docker is not available")];
-        }
-
-        let mut lines = Vec::new();
-
-        lines.push(Line::from("Docker Images:"));
-        if self.docker_panel.images.is_empty() {
-            lines.push(Line::from("- none"));
-        } else {
-            for image in self.docker_panel.images.iter().take(3) {
-                lines.push(Line::from(format!("- {}", image)));
-            }
-        }
-
-        lines.push(Line::from(""));
-        lines.push(Line::from("Docker Ports:"));
-        if self.docker_panel.ports.is_empty() {
-            lines.push(Line::from("- none"));
-        } else {
-            for port in &self.docker_panel.ports {
-                lines.push(Line::from(format!("- {}", port)));
-            }
-        }
-
-        lines
+        self.docker_panel.rows = rows;
     }
 
     fn max_output_scroll(&self) -> u16 {
@@ -808,14 +764,12 @@ fn menu_allowed_on_current_os(menu: MenuKind) -> bool {
         | MenuKind::RunUbuntu22Network
         | MenuKind::RunUbuntu22Dependencies
         | MenuKind::RunUbuntu22Github
-        | MenuKind::RunUbuntu22Docker
         | MenuKind::RunUbuntu22Open
         | MenuKind::RunUbuntu22Ai => !cfg!(windows),
         MenuKind::RunWin11
         | MenuKind::RunWin11Network
         | MenuKind::RunWin11Dependencies
         | MenuKind::RunWin11Github
-        | MenuKind::RunWin11Docker
         | MenuKind::RunWin11Open
         | MenuKind::RunWin11Ai
         | MenuKind::RunWin11Dotfiles => cfg!(windows),
@@ -858,11 +812,7 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::OpenMenu(MenuKind::RunUbuntu22Github),
             },
             CommandItem {
-                label: "vn run ubuntu22-docker",
-                action: Action::OpenMenu(MenuKind::RunUbuntu22Docker),
-            },
-            CommandItem {
-                label: "vn run ubuntu22-open",
+                label: "vn run ubuntu22-open (apps + docker)",
                 action: Action::OpenMenu(MenuKind::RunUbuntu22Open),
             },
             CommandItem {
@@ -908,7 +858,7 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::OpenMenu(MenuKind::RunUbuntu22),
             },
         ],
-        MenuKind::RunUbuntu22Docker => vec![
+        MenuKind::RunUbuntu22Open => vec![
             CommandItem {
                 label: "vn run ubuntu22-open-docker",
                 action: Action::Execute(vec!["run", "ubuntu22-open-docker"]),
@@ -925,12 +875,6 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 label: "vn run ubuntu22-remove-images",
                 action: Action::Execute(vec!["run", "ubuntu22-remove-images"]),
             },
-            CommandItem {
-                label: "< Back to ubuntu22",
-                action: Action::OpenMenu(MenuKind::RunUbuntu22),
-            },
-        ],
-        MenuKind::RunUbuntu22Open => vec![
             CommandItem {
                 label: "vn run ubuntu22-open-docs",
                 action: Action::Execute(vec!["run", "ubuntu22-open-docs"]),
@@ -1012,11 +956,7 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::OpenMenu(MenuKind::RunWin11Github),
             },
             CommandItem {
-                label: "vn run win11-docker",
-                action: Action::OpenMenu(MenuKind::RunWin11Docker),
-            },
-            CommandItem {
-                label: "vn run win11-open",
+                label: "vn run win11-open (apps + docker)",
                 action: Action::OpenMenu(MenuKind::RunWin11Open),
             },
             CommandItem {
@@ -1062,7 +1002,7 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::OpenMenu(MenuKind::RunWin11),
             },
         ],
-        MenuKind::RunWin11Docker => vec![
+        MenuKind::RunWin11Open => vec![
             CommandItem {
                 label: "vn run win11-open-docker",
                 action: Action::Execute(vec!["run", "win11-open-docker"]),
@@ -1079,12 +1019,6 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 label: "vn run win11-remove-images",
                 action: Action::Execute(vec!["run", "win11-remove-images"]),
             },
-            CommandItem {
-                label: "< Back to win11",
-                action: Action::OpenMenu(MenuKind::RunWin11),
-            },
-        ],
-        MenuKind::RunWin11Open => vec![
             CommandItem {
                 label: "vn run win11-open-docs",
                 action: Action::Execute(vec!["run", "win11-open-docs"]),
@@ -1341,8 +1275,39 @@ fn event_loop(
             let dashboard = List::new(button_items)
                 .block(Block::default().borders(Borders::ALL).title(dashboard_title));
 
-            let docker = Paragraph::new(app.docker_panel_lines())
-                .block(Block::default().borders(Borders::ALL).title("Docker"));
+            let docker_status = if app.docker_panel.available { "ON" } else { "OFF" };
+            let docker_header = Row::new(vec!["Port", "Image", "Container"]).style(
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            );
+            let docker_rows: Vec<Row> = if app.docker_panel.available && app.docker_panel.rows.is_empty()
+            {
+                vec![Row::new(vec!["-", "(no running containers)", "-"])]
+            } else if !app.docker_panel.available {
+                vec![Row::new(vec!["-", "(docker not running)", "-"])]
+            } else {
+                app.docker_panel
+                    .rows
+                    .iter()
+                    .map(|(p, i, c)| Row::new(vec![p.clone(), i.clone(), c.clone()]))
+                    .collect()
+            };
+            let docker = Table::new(
+                docker_rows,
+                [
+                    Constraint::Percentage(26),
+                    Constraint::Percentage(46),
+                    Constraint::Percentage(28),
+                ],
+            )
+            .header(docker_header)
+            .column_spacing(1)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .title(format!("Docker: {}", docker_status)),
+            );
 
             let log_lines: Vec<Line> = app
                 .logs
