@@ -1197,7 +1197,11 @@ fn event_loop(
         if event::poll(Duration::from_millis(250))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                    KeyCode::Char('q') | KeyCode::Esc => {
+                    KeyCode::Esc => {
+                        app.shutdown();
+                        break;
+                    }
+                    KeyCode::Char('q') if matches!(app.focus, Focus::Dashboard) => {
                         app.shutdown();
                         break;
                     }
@@ -1207,23 +1211,31 @@ fn event_loop(
                             Focus::Input => Focus::Dashboard,
                         }
                     }
-                    KeyCode::Down | KeyCode::Char('j') => {
+                    KeyCode::Down => {
                         if matches!(app.focus, Focus::Dashboard) {
                             app.next();
                         }
                     }
-                    KeyCode::Up | KeyCode::Char('k') => {
+                    KeyCode::Up => {
                         if matches!(app.focus, Focus::Dashboard) {
                             app.previous();
                         }
                     }
-                    KeyCode::Char(',') => {
+                    KeyCode::Char('j') if matches!(app.focus, Focus::Dashboard) => {
+                        app.next();
+                    }
+                    KeyCode::Char('k') if matches!(app.focus, Focus::Dashboard) => {
+                        app.previous();
+                    }
+                    KeyCode::Char(',') if matches!(app.focus, Focus::Dashboard) => {
                         app.output_page_up();
                     }
-                    KeyCode::Char('.') => {
+                    KeyCode::Char('.') if matches!(app.focus, Focus::Dashboard) => {
                         app.output_page_down();
                     }
-                    KeyCode::Char('r') | KeyCode::Char('R') => {
+                    KeyCode::Char('r') | KeyCode::Char('R')
+                        if matches!(app.focus, Focus::Dashboard) =>
+                    {
                         app.refresh_ui();
                         terminal.clear()?;
                     }
@@ -1376,7 +1388,7 @@ fn event_loop(
                     "Tab: input  Up/Down: select  Enter: run  R: refresh ui  ,/.: output page  q/Esc: exit"
                 }
                 Focus::Input => {
-                    "Tab: dashboard  Enter: send input  Backspace: delete  R: refresh ui  ,/.: output page  q/Esc: exit"
+                    "Type to enter text  Tab: dashboard  Enter: send input  Backspace: delete  Esc: exit"
                 }
             };
 
