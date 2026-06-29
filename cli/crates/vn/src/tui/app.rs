@@ -19,6 +19,12 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
+// ---- Modern theme: a light-blue accent on the terminal's (black) background. ----
+const ACCENT: Color = Color::Cyan; // primary light blue (headers, highlights)
+const ACCENT_HI: Color = Color::LightCyan; // brighter accent for focus/commands
+const DIM: Color = Color::DarkGray; // de-emphasized borders/text
+const MUTED: Color = Color::Gray; // secondary text / inactive titles
+
 #[derive(Clone, Copy, PartialEq)]
 enum MenuKind {
     Root,
@@ -1097,6 +1103,40 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
     }
 }
 
+/// A bordered panel. When `focused` it gets a bright accent border and a
+/// highlighted (light-blue) title label; otherwise a dim border + muted title.
+/// This shows which panel (Dashboard / Input) is active without flooding the
+/// terminal's black background.
+fn panel_block(title: &str, focused: bool) -> Block<'static> {
+    let (border, title_style) = if focused {
+        (
+            Style::default().fg(ACCENT_HI).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Black)
+                .bg(ACCENT_HI)
+                .add_modifier(Modifier::BOLD),
+        )
+    } else {
+        (
+            Style::default().fg(DIM),
+            Style::default().fg(MUTED),
+        )
+    };
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(border)
+        .title(Span::styled(format!(" {} ", title), title_style))
+}
+
+/// A plain (non-focusable) panel: dim border, muted title — for the static
+/// panels (CLI header, Docker, CLI Output).
+fn plain_block(title: String) -> Block<'static> {
+    Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(DIM))
+        .title(Span::styled(format!(" {} ", title), Style::default().fg(MUTED)))
+}
+
 pub fn run(repo_root: Option<std::path::PathBuf>) -> Result<()> {
     if let Some(repo_root) = &repo_root {
         env::set_var("VECNODE_REPO_ROOT", repo_root);
@@ -1210,14 +1250,14 @@ fn event_loop(
                 ])
                 .split(frame.area());
 
-            let active_model = app.selected_model.clone().unwrap_or_else(|| "default".to_string());
+            let active_model = app.selected_model.clone().unwrap_or_else(|| "none".to_string());
             let today = Local::now().format("%Y-%m-%d");
             let header = Paragraph::new(format!(
                 "vecnode vn    |    AI model: {}    |    Date: {}",
                 active_model, today
             ))
-            .style(Style::default().add_modifier(Modifier::BOLD))
-            .block(Block::default().borders(Borders::ALL).title("CLI"));
+            .style(Style::default().fg(ACCENT_HI).add_modifier(Modifier::BOLD))
+            .block(plain_block("CLI".to_string()));
 
             let middle = Layout::default()
                 .direction(Direction::Horizontal)
@@ -1257,7 +1297,7 @@ fn event_loop(
                             format!("[ {} ]", label),
                             Style::default()
                                 .fg(Color::Black)
-                                .bg(Color::Cyan)
+                                .bg(ACCENT)
                                 .add_modifier(Modifier::BOLD),
                         )]))
                     } else {
@@ -1273,14 +1313,11 @@ fn event_loop(
             list_state.select(Some(app.selected));
 
             let dashboard = List::new(button_items)
-                .block(Block::default().borders(Borders::ALL).title(dashboard_title));
+                .block(panel_block(dashboard_title, matches!(app.focus, Focus::Dashboard)));
 
             let docker_status = if app.docker_panel.available { "ON" } else { "OFF" };
-            let docker_header = Row::new(vec!["Port", "Image", "Container"]).style(
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            );
+            let docker_header = Row::new(vec!["Port", "Image", "Container"])
+                .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD));
             let docker_rows: Vec<Row> = if app.docker_panel.available && app.docker_panel.rows.is_empty()
             {
                 vec![Row::new(vec!["-", "(no running containers)", "-"])]
@@ -1296,8 +1333,8 @@ fn event_loop(
             let docker = Table::new(
                 docker_rows,
                 [
-                    Constraint::Percentage(26),
-                    Constraint::Percentage(46),
+                    Constraint::Percentage(13),
+                    Constraint::Percentage(59),
                     Constraint::Percentage(28),
                 ],
             )
@@ -1306,7 +1343,13 @@ fn event_loop(
             .block(
                 Block::default()
                     .borders(Borders::ALL)
-                    .title(format!("Docker: {}", docker_status)),
+                    .border_style(Style::default().fg(DIM))
+                    .title(Span::styled(
+                        format!(" Docker: {} ", docker_status),
+                        Style::default()
+                            .fg(if app.docker_panel.available { ACCENT_HI } else { DIM })
+                            .add_modifier(Modifier::BOLD),
+                    )),
             );
 
             let log_lines: Vec<Line> = app
@@ -1317,19 +1360,20 @@ fn event_loop(
                         Line::from(Span::styled(
                             format!("> {}", command),
                             Style::default()
-                                .fg(Color::Black)
-                                .bg(Color::LightGreen)
+                                .fg(ACCENT_HI)
                                 .add_modifier(Modifier::BOLD),
                         ))
                     } else if let LogEntry::Error(text) = entry {
                         Line::from(Span::styled(text.clone(), Style::default().fg(Color::LightRed)))
                     } else if let LogEntry::Stderr(text) = entry {
-                        Line::from(Span::styled(text.clone(), Style::default().fg(Color::LightYellow)))
+                        Line::from(Span::styled(text.clone(), Style::default().fg(Color::Yellow)))
                     } else if let LogEntry::Stdout(text) = entry {
-                        Line::from(Span::raw(text.clone()))
+                        Line::from(Span::styled(text.clone(), Style::default().fg(Color::White)))
                     } else {
                         match entry {
-                            LogEntry::Info(text) => Line::from(Span::raw(text.clone())),
+                            LogEntry::Info(text) => {
+                                Line::from(Span::styled(text.clone(), Style::default().fg(MUTED)))
+                            }
                             _ => Line::from(Span::raw(String::new())),
                         }
                     }
@@ -1345,7 +1389,7 @@ fn event_loop(
             }
 
             let output = Paragraph::new(log_lines)
-                .block(Block::default().borders(Borders::ALL).title("CLI Output"))
+                .block(plain_block("CLI Output".to_string()))
                 .scroll((app.output_scroll, 0));
 
             let keys_text = match app.focus {
@@ -1366,19 +1410,24 @@ fn event_loop(
                     }
                     InputPurpose::Chat => format!(
                         "Message {} , then Enter...",
-                        app.selected_model.clone().unwrap_or_else(|| "default".to_string())
+                        app.selected_model.clone().unwrap_or_else(|| "none".to_string())
                     ),
                     InputPurpose::None => "Type input for running command...".to_string(),
                 }
             };
 
-            let input_style = Style::default().fg(Color::White).bg(Color::Green);
+            let input_focused = matches!(app.focus, Focus::Input);
+            let input_style = if input_focused {
+                Style::default().fg(Color::Black).bg(ACCENT_HI)
+            } else {
+                Style::default().fg(DIM)
+            };
 
             let footer = Paragraph::new(vec![
                 Line::from(Span::styled(input_text, input_style)),
-                Line::from(Span::styled(keys_text, Style::default().fg(Color::White))),
+                Line::from(Span::styled(keys_text, Style::default().fg(MUTED))),
             ])
-            .block(Block::default().borders(Borders::ALL).title("Input"));
+            .block(panel_block("Input", input_focused));
 
             frame.render_widget(header, areas[0]);
             frame.render_stateful_widget(dashboard, left_panels[0], &mut list_state);
