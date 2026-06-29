@@ -875,12 +875,16 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "ubuntu22-check-docker"]),
             },
             CommandItem {
-                label: "vn run ubuntu22-remove-containers",
-                action: Action::Execute(vec!["run", "ubuntu22-remove-containers"]),
+                label: "vn run ubuntu22-stop-all-containers",
+                action: Action::Execute(vec!["run", "ubuntu22-stop-all-containers"]),
             },
             CommandItem {
-                label: "vn run ubuntu22-remove-images",
-                action: Action::Execute(vec!["run", "ubuntu22-remove-images"]),
+                label: "vn run ubuntu22-remove-all-containers",
+                action: Action::Execute(vec!["run", "ubuntu22-remove-all-containers"]),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-remove-all-images",
+                action: Action::Execute(vec!["run", "ubuntu22-remove-all-images"]),
             },
             CommandItem {
                 label: "vn run ubuntu22-open-docs",
@@ -907,8 +911,8 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "ubuntu22-stop-library-portal"]),
             },
             CommandItem {
-                label: "vn run ubuntu22-open-media-processor",
-                action: Action::Execute(vec!["run", "ubuntu22-open-media-processor"]),
+                label: "vn run ubuntu22-open-doc-processor",
+                action: Action::Execute(vec!["run", "ubuntu22-open-doc-processor"]),
             },
             CommandItem {
                 label: "< Back to ubuntu22",
@@ -1019,12 +1023,16 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "win11-check-docker"]),
             },
             CommandItem {
-                label: "vn run win11-remove-containers",
-                action: Action::Execute(vec!["run", "win11-remove-containers"]),
+                label: "vn run win11-stop-all-containers",
+                action: Action::Execute(vec!["run", "win11-stop-all-containers"]),
             },
             CommandItem {
-                label: "vn run win11-remove-images",
-                action: Action::Execute(vec!["run", "win11-remove-images"]),
+                label: "vn run win11-remove-all-containers",
+                action: Action::Execute(vec!["run", "win11-remove-all-containers"]),
+            },
+            CommandItem {
+                label: "vn run win11-remove-all-images",
+                action: Action::Execute(vec!["run", "win11-remove-all-images"]),
             },
             CommandItem {
                 label: "vn run win11-open-docs",
@@ -1051,12 +1059,8 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "win11-stop-library-portal"]),
             },
             CommandItem {
-                label: "vn run win11-open-media-processor",
-                action: Action::Execute(vec!["run", "win11-open-media-processor"]),
-            },
-            CommandItem {
-                label: "vn run win11-open-media-processor-dev",
-                action: Action::Execute(vec!["run", "win11-open-media-processor-dev"]),
+                label: "vn run win11-open-doc-processor",
+                action: Action::Execute(vec!["run", "win11-open-doc-processor"]),
             },
             CommandItem {
                 label: "< Back to win11",

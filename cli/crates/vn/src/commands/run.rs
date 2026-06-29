@@ -46,10 +46,13 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "ubuntu22-check-docker" => ScriptTarget {
             relative_path: "scripts/ubuntu22/check_docker.sh",
         },
-        "ubuntu22-remove-containers" => ScriptTarget {
+        "ubuntu22-stop-all-containers" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/stop_all_containers.sh",
+        },
+        "ubuntu22-remove-all-containers" => ScriptTarget {
             relative_path: "scripts/ubuntu22/remove_containers.sh",
         },
-        "ubuntu22-remove-images" => ScriptTarget {
+        "ubuntu22-remove-all-images" => ScriptTarget {
             relative_path: "scripts/ubuntu22/remove_images.sh",
         },
         "ubuntu22-download-all-repos" => ScriptTarget {
@@ -64,8 +67,8 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "ubuntu22-open-docs" => ScriptTarget {
             relative_path: "scripts/ubuntu22/open_docs.sh",
         },
-        "ubuntu22-open-media-processor" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/run_cli_container.sh",
+        "ubuntu22-open-doc-processor" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/open_doc_processor.sh",
         },
         "ubuntu22-run-cli-container" => ScriptTarget {
             relative_path: "scripts/ubuntu22/run_cli_container.sh",
@@ -150,11 +153,11 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
                 "scripts/win11/open_docs.bat"
             },
         },
-        "open-media-processor" => ScriptTarget {
+        "open-doc-processor" => ScriptTarget {
             relative_path: if is_linux {
-                "scripts/ubuntu22/open_media_processor.sh"
+                "scripts/ubuntu22/open_doc_processor.sh"
             } else {
-                "scripts/win11/open_media_processor.bat"
+                "scripts/win11/open_doc_processor.bat"
             },
         },
         "download-all-repos" => ScriptTarget {
@@ -223,10 +226,13 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "win11-check-docker" => ScriptTarget {
             relative_path: "scripts/win11/check_docker.bat",
         },
-        "win11-remove-containers" => ScriptTarget {
+        "win11-stop-all-containers" => ScriptTarget {
+            relative_path: "scripts/win11/stop_all_containers.bat",
+        },
+        "win11-remove-all-containers" => ScriptTarget {
             relative_path: "scripts/win11/remove_containers.bat",
         },
-        "win11-remove-images" => ScriptTarget {
+        "win11-remove-all-images" => ScriptTarget {
             relative_path: "scripts/win11/remove_images.bat",
         },
         "win11-download-all-orgs" => ScriptTarget {
@@ -250,11 +256,8 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "win11-stop-library-portal" => ScriptTarget {
             relative_path: "scripts/win11/stop_library_portal.bat",
         },
-        "win11-open-media-processor" => ScriptTarget {
-            relative_path: "scripts/win11/open_media_processor.bat",
-        },
-        "win11-open-media-processor-dev" => ScriptTarget {
-            relative_path: "scripts/win11/open_media_processor_dev.bat",
+        "win11-open-doc-processor" => ScriptTarget {
+            relative_path: "scripts/win11/open_doc_processor.bat",
         },
         "win11-check-ollama" => ScriptTarget {
             relative_path: "scripts/win11/check_ollama.bat",
@@ -269,7 +272,7 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
             relative_path: "scripts/tools-cli/alpine/main.sh",
         },
         _ => bail!(
-            "unknown script name '{}'. Supported linux and win11 script names plus cross-platform aliases (e.g. check-internet, check-dependencies, open-docker, open-docs, open-media-processor, check-ollama, open-ollama, download-all-repos, download-all-orgs, run-cli-container, open-silverbullet)",
+            "unknown script name '{}'. Supported linux and win11 script names plus cross-platform aliases (e.g. check-internet, check-dependencies, open-docker, open-docs, open-doc-processor, check-ollama, open-ollama, download-all-repos, download-all-orgs, run-cli-container, open-silverbullet)",
             name
         ),
     };

@@ -2,16 +2,16 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# open_media_processor.sh
-# Build and run media-processor container with UI and API ports.
+# open_doc_processor.sh
+# Build and run the doc-processor container (image source: docker/media-processor).
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DOCKERFILE_PATH="$REPO_ROOT/docker/media-processor/Dockerfile"
 BUILD_CONTEXT="$REPO_ROOT"
-IMAGE_NAME="vecnode-media-processor:latest"
-CONTAINER_NAME="vecnode-media-processor"
+IMAGE_NAME="vecnode-doc-processor:latest"
+CONTAINER_NAME="vecnode-doc-processor"
 UI_PORT="8085"
 API_PORT="8086"
 PRESENTATION_PORT="8087"
