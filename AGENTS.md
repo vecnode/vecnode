@@ -36,7 +36,7 @@ On Windows the intended flow is:
    running. Quitting from the tray exits everything.
 
 Run everyday tasks from a normal (non-admin) TUI. Only use **"Open Admin TUI Terminal"**
-for commands that actually need elevation (e.g. some Docker / media-processor workflows);
+for commands that actually need elevation (e.g. some Docker / doc-processor workflows);
 that way `run_cli.bat` never has to be launched as Administrator.
 
 A single-instance lock (`%TEMP%\vecnode.vn.tray.lock`) keeps only one tray alive.

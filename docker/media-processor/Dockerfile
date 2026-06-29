@@ -1,8 +1,13 @@
 # Debian 12 slim
 FROM debian:12-slim
 
-# Install required dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install required dependencies.
+# Retry apt fetches (Acquire::Retries) and use --fix-missing so a transient
+# mirror/network hiccup on a single .deb (the texlive/yt-dlp set is large)
+# doesn't fail the whole build.
+RUN apt-get update -o Acquire::Retries=5 && \
+    apt-get install -y --no-install-recommends --fix-missing \
+    -o Acquire::Retries=5 \
     git \
     curl \
     jq \

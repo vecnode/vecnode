@@ -12,15 +12,11 @@ Professional media-processor container with:
 
 Use the TUI action:
 
-- vn run win11-open-media-processor
+- vn run win11-open-doc-processor
 
 This script builds the image, starts the container, waits for health, and opens the browser.
-
-For frontend development with live UI edits, use:
-
-- vn run win11-open-media-processor-dev
-
-This dev script reuses the existing image (builds only if missing), mounts `docker/media-processor/ui` into the container, and lets you refresh the browser after editing HTML/CSS/JS without rebuilding the image.
+(The image source lives in `docker/media-processor/`; the running image/container is named
+`vecnode-doc-processor`.)
 
 ## Manual run
 
@@ -76,4 +72,4 @@ docker ps --filter "name=vecnode-media-processor"
 ## Troubleshooting
 
 - If Docker is not running, start Docker Desktop and retry.
-- If ports are busy, free 8085/8086 or adjust mappings in scripts/win11/open_media_processor.bat.
+- If ports are busy, free 8085/8086 or adjust mappings in scripts/win11/open_doc_processor.bat.

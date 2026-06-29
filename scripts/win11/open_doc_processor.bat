@@ -2,15 +2,15 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 REM ---------------------------------------------------------------------------
-REM open_media_processor.bat
-REM Build and run media-processor container with UI and API ports.
+REM open_doc_processor.bat
+REM Build and run the doc-processor container (image source: docker/media-processor).
 REM ---------------------------------------------------------------------------
 
 for %%I in ("%~dp0..\..") do set "REPO_ROOT=%%~fI"
 set "DOCKERFILE_PATH=%REPO_ROOT%\docker\media-processor\Dockerfile"
 set "BUILD_CONTEXT=%REPO_ROOT%"
-set "IMAGE_NAME=vecnode-media-processor:latest"
-set "CONTAINER_NAME=vecnode-media-processor"
+set "IMAGE_NAME=vecnode-doc-processor:latest"
+set "CONTAINER_NAME=vecnode-doc-processor"
 set "UI_PORT=8085"
 set "API_PORT=8086"
 set "PRESENTATION_PORT=8087"
