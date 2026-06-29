@@ -19,9 +19,10 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
-// ---- Modern theme: a light-blue accent on the terminal's (black) background. ----
-const ACCENT: Color = Color::Cyan; // primary light blue (headers, highlights)
-const ACCENT_HI: Color = Color::LightCyan; // brighter accent for focus/commands
+// ---- Theme: one cyan accent (the Docker header / button blue) on the
+// terminal's (black) background, plus two grays. Two "blues" total: this cyan
+// used as a fill (selection / focus) and as text (headers, commands). ----
+const ACCENT: Color = Color::Cyan; // the single blue accent
 const DIM: Color = Color::DarkGray; // de-emphasized borders/text
 const MUTED: Color = Color::Gray; // secondary text / inactive titles
 
@@ -1110,10 +1111,10 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
 fn panel_block(title: &str, focused: bool) -> Block<'static> {
     let (border, title_style) = if focused {
         (
-            Style::default().fg(ACCENT_HI).add_modifier(Modifier::BOLD),
+            Style::default().fg(ACCENT).add_modifier(Modifier::BOLD),
             Style::default()
                 .fg(Color::Black)
-                .bg(ACCENT_HI)
+                .bg(ACCENT)
                 .add_modifier(Modifier::BOLD),
         )
     } else {
@@ -1256,7 +1257,7 @@ fn event_loop(
                 "vecnode vn    |    AI model: {}    |    Date: {}",
                 active_model, today
             ))
-            .style(Style::default().fg(ACCENT_HI).add_modifier(Modifier::BOLD))
+            .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
             .block(plain_block("CLI".to_string()));
 
             let middle = Layout::default()
@@ -1347,7 +1348,7 @@ fn event_loop(
                     .title(Span::styled(
                         format!(" Docker: {} ", docker_status),
                         Style::default()
-                            .fg(if app.docker_panel.available { ACCENT_HI } else { DIM })
+                            .fg(if app.docker_panel.available { ACCENT } else { DIM })
                             .add_modifier(Modifier::BOLD),
                     )),
             );
@@ -1360,7 +1361,7 @@ fn event_loop(
                         Line::from(Span::styled(
                             format!("> {}", command),
                             Style::default()
-                                .fg(ACCENT_HI)
+                                .fg(ACCENT)
                                 .add_modifier(Modifier::BOLD),
                         ))
                     } else if let LogEntry::Error(text) = entry {
@@ -1418,7 +1419,7 @@ fn event_loop(
 
             let input_focused = matches!(app.focus, Focus::Input);
             let input_style = if input_focused {
-                Style::default().fg(Color::Black).bg(ACCENT_HI)
+                Style::default().fg(Color::Black).bg(ACCENT)
             } else {
                 Style::default().fg(DIM)
             };
