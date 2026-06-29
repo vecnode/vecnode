@@ -14,7 +14,6 @@ IMAGE_NAME="vecnode-doc-processor:latest"
 CONTAINER_NAME="vecnode-doc-processor"
 UI_PORT="8085"
 API_PORT="8086"
-PRESENTATION_PORT="8087"
 HOST_DESKTOP_HOST="${HOME}/Desktop"
 HOST_DESKTOP_CONTAINER="/host/Desktop"
 
@@ -51,8 +50,8 @@ echo ""
 echo "[INFO] Removing previous container if present..."
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
-echo "[INFO] Starting media-processor container..."
-docker run -d --rm --name "$CONTAINER_NAME" -p "$UI_PORT":8085 -p "$API_PORT":8086 -p "$PRESENTATION_PORT":8087 -e HOST_DESKTOP_DIR="$HOST_DESKTOP_CONTAINER" -v "$HOST_DESKTOP_HOST":"$HOST_DESKTOP_CONTAINER" "$IMAGE_NAME" >/dev/null
+echo "[INFO] Starting doc-processor container..."
+docker run -d --rm --name "$CONTAINER_NAME" -p "$UI_PORT":8085 -p "$API_PORT":8086 -e HOST_DESKTOP_DIR="$HOST_DESKTOP_CONTAINER" -v "$HOST_DESKTOP_HOST":"$HOST_DESKTOP_CONTAINER" "$IMAGE_NAME" >/dev/null
 
 echo "[INFO] Waiting for API health endpoint..."
 READY=0
@@ -72,7 +71,6 @@ fi
 
 echo "[INFO] UI:  http://localhost:$UI_PORT"
 echo "[INFO] API: http://localhost:$API_PORT"
-echo "[INFO] Presentation: http://localhost:$PRESENTATION_PORT"
 echo "[INFO] Output folder base: $HOST_DESKTOP_HOST"
 echo "[INFO] Logs: docker logs -f $CONTAINER_NAME"
 echo "[INFO] Stop: docker stop $CONTAINER_NAME"
