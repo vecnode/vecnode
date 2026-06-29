@@ -199,7 +199,7 @@ PAGE = """<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Library</title>
 <style>
-:root{{--bg:#F0EEE6;--surface:#FBFAF7;--ink:#181614;--muted:#73706A;--accent:#C9613E;--line:#E4E0D6;}}
+:root{{--bg:#F0EEE6;--surface:#FBFAF7;--ink:#181614;--muted:#73706A;--accent:#0EA5E9;--accent-tint:#E1F1FB;--line:#E4E0D6;}}
 *{{box-sizing:border-box;}}
 body{{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased;}}
 .wrap{{max-width:1040px;margin:0 auto;padding:48px 24px 96px;}}
@@ -227,7 +227,7 @@ select,.toggle button{{padding:11px 13px;font-size:14px;background:var(--surface
   background:var(--surface);border:1px solid var(--line);border-radius:12px;transition:border-color .12s,transform .12s;}}
 .view-grid .navfolder:hover{{border-color:var(--accent);transform:translateY(-1px);}}
 .view-grid .navfolder span:first-child{{font-size:38px;line-height:1;}}
-.navfolder.drop-hover{{outline:2px dashed var(--accent);outline-offset:-2px;background:#F7ECE6;}}
+.navfolder.drop-hover{{outline:2px dashed var(--accent);outline-offset:-2px;background:var(--accent-tint);}}
 .rowbtns .mv:hover{{border-color:var(--accent);color:var(--accent);}}
 .count{{color:var(--muted);font-size:13px;margin:2px 2px 18px;}}
 #list.view-grid{{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px;}}
@@ -249,7 +249,7 @@ select,.toggle button{{padding:11px 13px;font-size:14px;background:var(--surface
 .title{{font-size:15.5px;font-weight:500;word-break:break-word;}}
 .meta{{color:var(--muted);font-size:13px;margin-top:2px;}}
 .tags{{margin-top:6px;display:flex;flex-wrap:wrap;gap:5px;}}
-.tag{{font-size:11.5px;color:var(--accent);background:#F3E7E0;border-radius:20px;padding:1px 9px;}}
+.tag{{font-size:11.5px;color:var(--accent);background:var(--accent-tint);border-radius:20px;padding:1px 9px;}}
 .rowbtns{{position:absolute;top:8px;right:8px;display:flex;gap:6px;opacity:0;transition:opacity .12s;z-index:2;}}
 .item:hover .rowbtns{{opacity:1;}}
 .rowbtns button{{border:1px solid var(--line);background:var(--surface);color:var(--muted);
@@ -283,9 +283,23 @@ footer{{color:var(--muted);font-size:12px;margin-top:30px;text-align:center;}}
 .tx:hover{{border-color:#C0392B;color:#C0392B;}}
 .tfile{{cursor:grab;}}
 .tchildren.collapsed{{display:none;}}
-.drop-hover{{outline:2px dashed var(--accent);outline-offset:-2px;background:#F7ECE6;}}
+.drop-hover{{outline:2px dashed var(--accent);outline-offset:-2px;background:var(--accent-tint);}}
 .btn{{padding:9px 15px;font-size:14px;border-radius:9px;border:1px solid var(--line);background:var(--surface);color:var(--ink);cursor:pointer;}}
 .btn.primary{{background:var(--accent);border-color:var(--accent);color:#fff;}}
+/* multi-select */
+.selwrap{{position:absolute;top:8px;left:8px;z-index:3;opacity:0;transition:opacity .12s;}}
+.item:hover .selwrap,.item.selected .selwrap{{opacity:1;}}
+.selbox{{width:17px;height:17px;cursor:pointer;accent-color:var(--accent);}}
+.item.selected{{border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);}}
+.trow.selected{{background:var(--accent-tint);}}
+.trow .selbox{{flex:0 0 auto;}}
+.selbar{{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);display:none;align-items:center;gap:12px;
+  background:var(--ink);color:#fff;padding:10px 14px;border-radius:12px;box-shadow:0 6px 26px rgba(0,0,0,.28);z-index:20;}}
+.selbar.show{{display:flex;}}
+.selbar select{{padding:7px 9px;border-radius:8px;border:1px solid #4a4a4a;background:#2a2826;color:#fff;font-size:13px;max-width:260px;}}
+.selbar .sb{{padding:7px 12px;border-radius:8px;border:none;cursor:pointer;background:var(--accent);color:#fff;font-size:13px;}}
+.selbar .sb.ghost{{background:transparent;border:1px solid #4a4a4a;color:#ddd;}}
+.selcount{{font-size:13.5px;font-weight:600;}}
 </style></head>
 <body>
 <div class="wrap">
@@ -316,6 +330,14 @@ footer{{color:var(--muted);font-size:12px;margin-top:30px;text-align:center;}}
   <div id="tree" class="tree" style="display:none"></div>
   <div id="empty" class="empty" style="display:none">No documents match.</div>
   <footer>library-portal · served live from <code>library/</code></footer>
+</div>
+
+<div id="selbar" class="selbar">
+  <span class="selcount" id="selcount">0 selected</span>
+  <select id="selfolder"></select>
+  <button class="sb" type="button" onclick="bulkMove()">Move</button>
+  <button class="sb ghost" type="button" onclick="selectAllVisible()">Select all</button>
+  <button class="sb ghost" type="button" onclick="clearSel()">Clear</button>
 </div>
 
 <div id="backdrop" class="backdrop">
@@ -502,14 +524,18 @@ function wireToggle(row,kids){{
   }});
 }}
 function mkFileRow(fl,depth){{
-  const row=document.createElement('div'); row.className='trow tfile';
+  const row=document.createElement('div'); row.className='trow tfile'; row.dataset.rel=fl.rel;
   row.style.paddingLeft=(depth*18+24)+'px'; row.draggable=true;
   row.addEventListener('dragstart',e=>{{e.dataTransfer.setData('text/plain',fl.rel);e.dataTransfer.effectAllowed='move';}});
-  row.innerHTML='<span>📄</span><span class="tname">'+escapeHtml(fl.name)+'</span><span class="tsize">'+escapeHtml(fl.size)+'</span>'
+  row.innerHTML='<input type="checkbox" class="selbox"><span>📄</span><span class="tname">'+escapeHtml(fl.name)+'</span><span class="tsize">'+escapeHtml(fl.size)+'</span>'
     +'<button class="tx bmv" type="button">Move</button><button class="tx bdel" type="button">Delete</button>';
+  const cb=row.querySelector('.selbox');
+  if(selected.has(fl.rel)){{ row.classList.add('selected'); cb.checked=true; }}
+  cb.addEventListener('click',e=>e.stopPropagation());
+  cb.addEventListener('change',()=>toggleSel(fl.rel,cb.checked,row));
   row.querySelector('.bmv').onclick=e=>{{e.preventDefault();e.stopPropagation();openMv(fl.rel,fl.name);}};
   row.querySelector('.bdel').onclick=e=>{{e.preventDefault();e.stopPropagation();openDeleteRel(fl.rel,fl.name);}};
-  row.addEventListener('click',e=>{{ if(e.target.closest('button'))return; openPreview(fl.rel,fl.name); }});
+  row.addEventListener('click',e=>{{ if(e.target.closest('button')||e.target.classList.contains('selbox'))return; openPreview(fl.rel,fl.name); }});
   return row;
 }}
 function renderNode(node,base,depth,into){{
@@ -628,6 +654,43 @@ async function confirmDelete(){{
 document.querySelectorAll('.del').forEach(b=>b.onclick=e=>{{e.preventDefault();e.stopPropagation();openDelete(b.closest('.item'));}});
 document.getElementById('delback').addEventListener('click',e=>{{if(e.target.id==='delback')closeDelete();}});
 
+// ---- multi-select (list / grid / tree) ----
+const selected=new Set();
+function refreshSelBar(){{
+  document.getElementById('selcount').textContent=selected.size+' selected';
+  document.getElementById('selbar').classList.toggle('show',selected.size>0);
+}}
+function toggleSel(rel,on,el){{
+  if(on)selected.add(rel); else selected.delete(rel);
+  if(el)el.classList.toggle('selected',on);
+  refreshSelBar();
+}}
+function clearSel(){{
+  selected.clear();
+  document.querySelectorAll('.selected').forEach(e=>e.classList.remove('selected'));
+  document.querySelectorAll('.selbox').forEach(c=>c.checked=false);
+  refreshSelBar();
+}}
+function selectAllVisible(){{
+  if(inTree()){{
+    document.querySelectorAll('#tree .tfile').forEach(r=>{{const rel=r.dataset.rel; if(!rel)return; selected.add(rel); r.classList.add('selected'); const cb=r.querySelector('.selbox'); if(cb)cb.checked=true;}});
+  }} else {{
+    document.querySelectorAll('#list .item').forEach(el=>{{ if(el.style.display==='none')return; selected.add(el.dataset.rel); el.classList.add('selected'); const cb=el.querySelector('.selbox'); if(cb)cb.checked=true; }});
+  }}
+  refreshSelBar();
+}}
+async function bulkMove(){{
+  if(selected.size===0)return;
+  const folder=document.getElementById('selfolder').value;
+  const r=await fetch('/api/move-batch',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{rels:[...selected],folder}})}});
+  if(r.ok)location.reload(); else alert('Move failed: '+(await r.text()));
+}}
+document.getElementById('selfolder').innerHTML='<option value="">Move to: library/ (root)</option>'+FOLDERS.map(f=>'<option value="'+escapeHtml(f)+'">Move to: '+escapeHtml(f)+'</option>').join('');
+document.querySelectorAll('#list .selbox').forEach(cb=>{{
+  cb.addEventListener('click',e=>e.stopPropagation());
+  cb.addEventListener('change',()=>{{const it=cb.closest('.item'); toggleSel(it.dataset.rel,cb.checked,it);}});
+}});
+
 // init
 sortItems();
 setView(localStorage.getItem('lp_view')||'list');
@@ -660,6 +723,7 @@ def render_index() -> str:
             f'data-title="{a(it["title"].lower())}" data-title-raw="{a(it["title"])}" '
             f'data-year="{a(it["year"])}" data-author="{a(it["author"])}" '
             f'data-tags="{a(" ".join(tags))}" data-search="{a(search)}">'
+            f'<div class="selwrap"><input type="checkbox" class="selbox" title="Select"></div>'
             f'<div class="rowbtns"><button class="edit" type="button">Edit</button>'
             f'<button class="mv" type="button">Move</button>'
             f'<button class="del" type="button">Delete</button></div>'
@@ -741,7 +805,59 @@ class Handler(BaseHTTPRequestHandler):
             return self.handle_mkdir()
         if self.path == "/api/move":
             return self.handle_move()
+        if self.path == "/api/move-batch":
+            return self.handle_move_batch()
         return self._send(404, b"Not found", "text/plain")
+
+    def handle_move_batch(self):
+        try:
+            payload = self._read_json()
+        except Exception:
+            return self._json(400, {"error": "bad request"})
+        rels = payload.get("rels", [])
+        if not isinstance(rels, list):
+            return self._json(400, {"error": "rels must be a list"})
+        folder = clean_folder_rel(payload.get("folder", ""))
+        dest_dir = os.path.realpath(os.path.join(LIBRARY, folder)) if folder else LIBRARY
+        if dest_dir != LIBRARY and not dest_dir.startswith(LIBRARY + os.sep):
+            return self._json(400, {"error": "invalid folder"})
+        if not os.path.isdir(dest_dir):
+            return self._json(400, {"error": "destination folder does not exist"})
+
+        moved, errors = 0, []
+        with _LOCK:
+            side = load_sidecar()
+            changed = False
+            for rel in rels:
+                full = safe_path(rel)
+                if not full:
+                    errors.append(rel)
+                    continue
+                target = os.path.join(dest_dir, os.path.basename(full))
+                if os.path.realpath(target) == os.path.realpath(full):
+                    continue  # already in the destination
+                if os.path.exists(target):
+                    errors.append(rel)
+                    continue
+                try:
+                    os.rename(full, target)
+                except OSError:
+                    errors.append(rel)
+                    continue
+                newrel = os.path.relpath(target, LIBRARY).replace(os.sep, "/")
+                if rel in side:
+                    side[newrel] = side.pop(rel)
+                    changed = True
+                old_thumb = thumb_file(rel)
+                if os.path.exists(old_thumb):
+                    try:
+                        os.remove(old_thumb)
+                    except OSError:
+                        pass
+                moved += 1
+            if changed:
+                save_sidecar(side)
+        return self._json(200, {"ok": True, "moved": moved, "errors": errors})
 
     def handle_mkdir(self):
         try:
