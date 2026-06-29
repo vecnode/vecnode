@@ -13,7 +13,6 @@ set "IMAGE_NAME=vecnode-doc-processor:latest"
 set "CONTAINER_NAME=vecnode-doc-processor"
 set "UI_PORT=8085"
 set "API_PORT=8086"
-set "PRESENTATION_PORT=8087"
 set "HOST_DESKTOP_WIN=%USERPROFILE%\Desktop"
 set "HOST_DESKTOP_CONTAINER=/host/Desktop"
 
@@ -63,8 +62,8 @@ echo.
 echo [INFO] Removing previous container if present...
 docker rm -f %CONTAINER_NAME% >nul 2>nul
 
-echo [INFO] Starting media-processor container...
-docker run -d --rm --name %CONTAINER_NAME% -p %UI_PORT%:8085 -p %API_PORT%:8086 -p %PRESENTATION_PORT%:8087 -e HOST_DESKTOP_DIR=%HOST_DESKTOP_CONTAINER% -v "%HOST_DESKTOP_WIN%:%HOST_DESKTOP_CONTAINER%" %IMAGE_NAME% >nul
+echo [INFO] Starting doc-processor container...
+docker run -d --rm --name %CONTAINER_NAME% -p %UI_PORT%:8085 -p %API_PORT%:8086 -e HOST_DESKTOP_DIR=%HOST_DESKTOP_CONTAINER% -v "%HOST_DESKTOP_WIN%:%HOST_DESKTOP_CONTAINER%" %IMAGE_NAME% >nul
 if errorlevel 1 (
 	echo [ERROR] Docker run failed.
 	exit /b 1
@@ -91,7 +90,6 @@ if "%READY%"=="1" (
 
 echo [INFO] UI:  http://localhost:%UI_PORT%
 echo [INFO] API: http://localhost:%API_PORT%
-echo [INFO] Presentation: http://localhost:%PRESENTATION_PORT%
 echo [INFO] Output folder base: %HOST_DESKTOP_WIN%
 echo [INFO] Logs: docker logs -f %CONTAINER_NAME%
 echo [INFO] Stop: docker stop %CONTAINER_NAME%
