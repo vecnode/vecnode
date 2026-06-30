@@ -4,8 +4,10 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # run_media_downloader.sh
 # Build the small media-downloader image (yt-dlp + ffmpeg) and run it, then
-# open Chrome. No host folder is mounted; each download streams straight to
-# the browser and the server-side temp copy is deleted right after.
+# open Chrome. Downloaded media is saved to the host Desktop (bind-mounted at
+# /output). The container runs non-root (as the invoking user) with all
+# capabilities dropped and no-new-privileges, since it fetches from arbitrary
+# web links.
 #
 # Image: vecnode-media-downloader (built locally)   UI: http://localhost:8095
 # Requirements (Linux): docker
@@ -15,6 +17,7 @@ IMAGE="vecnode-media-downloader"
 CONTAINER="media-downloader"
 PORT="8095"
 URL="http://localhost:8095"
+HOST_DESKTOP="${HOME}/Desktop"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
@@ -38,9 +41,16 @@ echo "[INFO] Building image '${IMAGE}'..."
 docker build -t "${IMAGE}" "${CTX}"
 echo "[OK] Image built."
 
-echo "[INFO] Starting container..."
+echo "[INFO] Starting container (non-root, caps dropped); saving to ${HOST_DESKTOP} ..."
+mkdir -p "${HOST_DESKTOP}"
 docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
-docker run -d --name "${CONTAINER}" -p "${PORT}:8095" "${IMAGE}" >/dev/null
+docker run -d --name "${CONTAINER}" \
+  --user "$(id -u):$(id -g)" \
+  --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 \
+  -p "${PORT}:8095" \
+  -e OUTPUT_LABEL=Desktop \
+  -v "${HOST_DESKTOP}:/output" \
+  "${IMAGE}" >/dev/null
 
 echo "[INFO] Waiting for Media Downloader at ${URL} ..."
 READY=0
@@ -64,7 +74,8 @@ fi
 
 echo ""
 echo "[INFO] Open:  ${URL}"
-echo "[INFO] Paste a video URL, pick MP3 / WAV / MP4 - the browser downloads the result."
+echo "[INFO] Paste a video URL, pick MP3 / WAV / MP4 - the file is saved to your Desktop."
+echo "[INFO] Save folder: ${HOST_DESKTOP}"
 echo "[INFO] Stop with:  vn run ubuntu22-stop-media-downloader  (or: docker stop ${CONTAINER})"
 echo "[INFO] Logs with:  docker logs -f ${CONTAINER}"
 exit 0

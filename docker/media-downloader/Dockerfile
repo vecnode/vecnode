@@ -15,10 +15,20 @@ RUN apt-get update -o Acquire::Retries=5 && \
 
 RUN python3 -m pip install --no-cache-dir --break-system-packages -U yt-dlp
 
+# Run as a non-root user (defense-in-depth; the run scripts also drop all caps
+# and set no-new-privileges). On Linux the run script overrides this with
+# --user $(id -u):$(id -g) so files on the host Desktop are owned by the user.
+RUN useradd --create-home --uid 10001 app
+
 WORKDIR /app
 COPY app.py /app/app.py
 
 EXPOSE 8095
-ENV PORT=8095
+ENV PORT=8095 \
+    OUTPUT_DIR=/output \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+USER app
 
 ENTRYPOINT ["python3", "/app/app.py"]

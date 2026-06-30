@@ -163,9 +163,14 @@ copy the Stirling-PDF open/stop script pair, change the image/port/container nam
 **media-downloader (custom, locally built):** a tiny yt-dlp + ffmpeg web app in
 [docker/media-downloader/](docker/media-downloader/) — `debian:12-slim` + a single stdlib
 `app.py`. `yt-dlp` is installed via `pip` (the Debian apt package is years stale and breaks
-against current sites). Paste a video URL, pick **MP3 / WAV / MP4**; the server downloads to a
-private temp dir, streams the file back as a browser download, then deletes it (no host mount,
-no state). `run_media_downloader.*` builds + runs on port 8095 and opens Chrome.
+against current sites). Paste a video URL, pick **MP3 / WAV / MP4**; the file is saved to the
+host **Desktop**, which `run_media_downloader.*` bind-mounts at `/output` (port 8095, opens
+Chrome). Because it fetches arbitrary web links, it is hardened: the container runs **non-root**
+(Linux uses `--user $(id -u):$(id -g)`), with **`--cap-drop ALL`**, **`--security-opt
+no-new-privileges`** and a pids limit; the app accepts only http/https URLs, **rejects hosts
+that resolve to loopback/private/link-local** (basic SSRF guard), runs yt-dlp with
+`--ignore-config --restrict-filenames --max-filesize`, and saves via a sanitized,
+traversal-checked, collision-safe filename confined to the mount.
 
 **library-portal (custom, locally built):** a lightweight viewer/manager for the repo's
 `library/` folder, living in [docker/library-portal/](docker/library-portal/) —
