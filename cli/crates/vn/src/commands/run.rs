@@ -91,6 +91,12 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "ubuntu22-stop-library-portal" => ScriptTarget {
             relative_path: "scripts/ubuntu22/stop_library_portal.sh",
         },
+        "ubuntu22-open-media-downloader" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/run_media_downloader.sh",
+        },
+        "ubuntu22-stop-media-downloader" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/stop_media_downloader.sh",
+        },
         "ubuntu22-check-ollama" => ScriptTarget {
             relative_path: "scripts/ubuntu22/check_ollama.sh",
         },
@@ -255,6 +261,12 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         },
         "win11-stop-library-portal" => ScriptTarget {
             relative_path: "scripts/win11/stop_library_portal.bat",
+        },
+        "win11-open-media-downloader" => ScriptTarget {
+            relative_path: "scripts/win11/run_media_downloader.bat",
+        },
+        "win11-stop-media-downloader" => ScriptTarget {
+            relative_path: "scripts/win11/stop_media_downloader.bat",
         },
         "win11-open-doc-processor" => ScriptTarget {
             relative_path: "scripts/win11/open_doc_processor.bat",

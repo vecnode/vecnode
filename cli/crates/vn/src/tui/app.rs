@@ -911,6 +911,14 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "ubuntu22-stop-library-portal"]),
             },
             CommandItem {
+                label: "vn run ubuntu22-open-media-downloader",
+                action: Action::Execute(vec!["run", "ubuntu22-open-media-downloader"]),
+            },
+            CommandItem {
+                label: "vn run ubuntu22-stop-media-downloader",
+                action: Action::Execute(vec!["run", "ubuntu22-stop-media-downloader"]),
+            },
+            CommandItem {
                 label: "vn run ubuntu22-open-doc-processor",
                 action: Action::Execute(vec!["run", "ubuntu22-open-doc-processor"]),
             },
@@ -1057,6 +1065,14 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
             CommandItem {
                 label: "vn run win11-stop-library-portal",
                 action: Action::Execute(vec!["run", "win11-stop-library-portal"]),
+            },
+            CommandItem {
+                label: "vn run win11-open-media-downloader",
+                action: Action::Execute(vec!["run", "win11-open-media-downloader"]),
+            },
+            CommandItem {
+                label: "vn run win11-stop-media-downloader",
+                action: Action::Execute(vec!["run", "win11-stop-media-downloader"]),
             },
             CommandItem {
                 label: "vn run win11-open-doc-processor",
