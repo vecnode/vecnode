@@ -154,10 +154,18 @@ handled globally by the Docker submenu's "remove containers" / "remove images". 
 - **stop**: `docker stop` the container but keep it (fast reopen).
 
 Most apps pull a published image (SilverBullet `ghcr.io/silverbulletmd/silverbullet` port
-3000, Stirling-PDF `stirlingtools/stirling-pdf` port 8080). One app is built locally:
-**library-portal** (port 8090). To add a pulled-image app, copy the Stirling-PDF open/stop
-script pair, change the image/port/container name, add the `run.rs` mappings, and add the
-`CommandItem`s to both Open submenus.
+3000, Stirling-PDF `stirlingtools/stirling-pdf` port 8080). Several apps are built locally:
+**library-portal** (port 8090), **doc-processor** (pandoc→PDF; ports 8085/8086, image source
+`docker/media-processor/`), and **media-downloader** (port 8095). To add a pulled-image app,
+copy the Stirling-PDF open/stop script pair, change the image/port/container name, add the
+`run.rs` mappings, and add the `CommandItem`s to both Open submenus.
+
+**media-downloader (custom, locally built):** a tiny yt-dlp + ffmpeg web app in
+[docker/media-downloader/](docker/media-downloader/) — `debian:12-slim` + a single stdlib
+`app.py`. `yt-dlp` is installed via `pip` (the Debian apt package is years stale and breaks
+against current sites). Paste a video URL, pick **MP3 / WAV / MP4**; the server downloads to a
+private temp dir, streams the file back as a browser download, then deletes it (no host mount,
+no state). `run_media_downloader.*` builds + runs on port 8095 and opens Chrome.
 
 **library-portal (custom, locally built):** a lightweight viewer/manager for the repo's
 `library/` folder, living in [docker/library-portal/](docker/library-portal/) —
