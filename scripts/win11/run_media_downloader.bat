@@ -4,8 +4,9 @@ setlocal EnableExtensions EnableDelayedExpansion
 REM ---------------------------------------------------------------------------
 REM run_media_downloader.bat
 REM Build the small media-downloader image (yt-dlp + ffmpeg) and run it, then
-REM open Chrome. No host folder is mounted; each download streams straight to
-REM the browser and the server-side temp copy is deleted right after.
+REM open Chrome. Downloaded media is saved to the host Desktop (bind-mounted at
+REM /output). The container runs non-root with all capabilities dropped and
+REM no-new-privileges, since it fetches from arbitrary web links.
 REM
 REM Image: vecnode-media-downloader (built locally)   UI: http://localhost:8095
 REM Requirements (Windows): docker
@@ -15,6 +16,7 @@ set "IMAGE=vecnode-media-downloader"
 set "CONTAINER=media-downloader"
 set "PORT=8095"
 set "URL=http://localhost:8095"
+set "HOST_DESKTOP=%USERPROFILE%\Desktop"
 
 for %%I in ("%~dp0..\..") do set "REPO_ROOT=%%~fI"
 set "CTX=%REPO_ROOT%\docker\media-downloader"
@@ -45,9 +47,9 @@ if errorlevel 1 (
 )
 echo [OK] Image built.
 
-echo [INFO] Starting container...
+echo [INFO] Starting container (non-root, caps dropped); saving to %HOST_DESKTOP% ...
 docker rm -f %CONTAINER% >nul 2>nul
-docker run -d --name %CONTAINER% -p %PORT%:8095 %IMAGE% >nul 2>nul
+docker run -d --name %CONTAINER% --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 -p %PORT%:8095 -e OUTPUT_LABEL=Desktop -v "%HOST_DESKTOP%:/output" %IMAGE% >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] Failed to start Media Downloader container.
     exit /b 1
@@ -86,7 +88,8 @@ if defined CHROME (
 
 echo.
 echo [INFO] Open:  %URL%
-echo [INFO] Paste a video URL, pick MP3 / WAV / MP4 - the browser downloads the result.
+echo [INFO] Paste a video URL, pick MP3 / WAV / MP4 - the file is saved to your Desktop.
+echo [INFO] Save folder: %HOST_DESKTOP%
 echo [INFO] Stop with:  vn run win11-stop-media-downloader  ^(or: docker stop %CONTAINER%^)
 echo [INFO] Logs with:  docker logs -f %CONTAINER%
 endlocal
