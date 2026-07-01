@@ -50,8 +50,14 @@ echo ""
 echo "[INFO] Removing previous container if present..."
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
-echo "[INFO] Starting doc-processor container..."
-docker run -d --rm --name "$CONTAINER_NAME" -p "$UI_PORT":8085 -p "$API_PORT":8086 -e HOST_DESKTOP_DIR="$HOST_DESKTOP_CONTAINER" -v "$HOST_DESKTOP_HOST":"$HOST_DESKTOP_CONTAINER" "$IMAGE_NAME" >/dev/null
+echo "[INFO] Starting doc-processor container (non-root, caps dropped)..."
+docker run -d --rm --name "$CONTAINER_NAME" \
+  --user "$(id -u):$(id -g)" \
+  --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 \
+  -p 127.0.0.1:"$UI_PORT":8085 -p 127.0.0.1:"$API_PORT":8086 \
+  -e HOST_DESKTOP_DIR="$HOST_DESKTOP_CONTAINER" \
+  -v "$HOST_DESKTOP_HOST":"$HOST_DESKTOP_CONTAINER" \
+  "$IMAGE_NAME" >/dev/null
 
 echo "[INFO] Waiting for API health endpoint..."
 READY=0

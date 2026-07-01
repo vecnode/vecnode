@@ -38,9 +38,14 @@ echo "[INFO] Building image '${IMAGE}' - app only, no PDFs are copied in..."
 docker build -t "${IMAGE}" "${CTX}"
 echo "[OK] Image built."
 
-echo "[INFO] Starting container with library/ mounted..."
+echo "[INFO] Starting container with library/ mounted (non-root, caps dropped)..."
 docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
-docker run -d --name "${CONTAINER}" -p "${PORT}:8090" -v "${REPO_ROOT}/library:/library" "${IMAGE}" >/dev/null
+docker run -d --name "${CONTAINER}" \
+  --user "$(id -u):$(id -g)" \
+  --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 \
+  -p "127.0.0.1:${PORT}:8090" \
+  -v "${REPO_ROOT}/library:/library" \
+  "${IMAGE}" >/dev/null
 
 echo "[INFO] Waiting for Library Portal at ${URL} ..."
 READY=0

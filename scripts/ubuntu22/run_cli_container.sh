@@ -85,7 +85,7 @@ if [[ "$MEDIA_PROCESSOR_MODE" -eq 1 ]]; then
   echo "[INFO] Starting media-processor services with port mappings..."
 
   docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
-  docker run -d --rm --name "$CONTAINER_NAME" -p 8085:8085 -p 8086:8086 "$IMAGE_NAME" >/dev/null
+  docker run -d --rm --name "$CONTAINER_NAME" -p 127.0.0.1:8085:8085 -p 127.0.0.1:8086:8086 "$IMAGE_NAME" >/dev/null
 
   echo "[OK] Container started: $CONTAINER_NAME"
   echo "[INFO] UI:  http://localhost:8085"

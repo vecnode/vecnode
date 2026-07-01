@@ -62,8 +62,8 @@ echo.
 echo [INFO] Removing previous container if present...
 docker rm -f %CONTAINER_NAME% >nul 2>nul
 
-echo [INFO] Starting doc-processor container...
-docker run -d --rm --name %CONTAINER_NAME% -p %UI_PORT%:8085 -p %API_PORT%:8086 -e HOST_DESKTOP_DIR=%HOST_DESKTOP_CONTAINER% -v "%HOST_DESKTOP_WIN%:%HOST_DESKTOP_CONTAINER%" %IMAGE_NAME% >nul
+echo [INFO] Starting doc-processor container (non-root, caps dropped)...
+docker run -d --rm --name %CONTAINER_NAME% --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 -p 127.0.0.1:%UI_PORT%:8085 -p 127.0.0.1:%API_PORT%:8086 -e HOST_DESKTOP_DIR=%HOST_DESKTOP_CONTAINER% -v "%HOST_DESKTOP_WIN%:%HOST_DESKTOP_CONTAINER%" %IMAGE_NAME% >nul
 if errorlevel 1 (
 	echo [ERROR] Docker run failed.
 	exit /b 1

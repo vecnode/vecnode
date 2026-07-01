@@ -37,7 +37,7 @@ elif docker ps -a --filter "name=^/${CONTAINER}$" --format '{{.Names}}' | grep -
   docker start "${CONTAINER}" >/dev/null
 else
   echo "[INFO] Running image '${IMAGE}' (first run downloads it, this can take a while)..."
-  docker run -d --name "${CONTAINER}" -p "${PORT}:8080" "${IMAGE}" >/dev/null
+  docker run -d --name "${CONTAINER}" -p "127.0.0.1:${PORT}:8080" "${IMAGE}" >/dev/null
 fi
 
 echo "[INFO] Waiting for Stirling-PDF to become ready at ${URL} ..."
