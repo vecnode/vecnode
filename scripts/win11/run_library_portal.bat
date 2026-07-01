@@ -45,9 +45,9 @@ if errorlevel 1 (
 )
 echo [OK] Image built.
 
-echo [INFO] Starting container with library/ mounted...
+echo [INFO] Starting container with library/ mounted (non-root, caps dropped)...
 docker rm -f %CONTAINER% >nul 2>nul
-docker run -d --name %CONTAINER% -p %PORT%:8090 -v "%REPO_ROOT%\library:/library" %IMAGE% >nul 2>nul
+docker run -d --name %CONTAINER% --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 -p 127.0.0.1:%PORT%:8090 -v "%REPO_ROOT%\library:/library" %IMAGE% >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] Failed to start Library Portal container.
     exit /b 1

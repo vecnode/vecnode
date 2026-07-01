@@ -49,7 +49,7 @@ echo [OK] Image built.
 
 echo [INFO] Starting container (non-root, caps dropped); saving to %HOST_DESKTOP% ...
 docker rm -f %CONTAINER% >nul 2>nul
-docker run -d --name %CONTAINER% --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 -p %PORT%:8095 -e OUTPUT_LABEL=Desktop -v "%HOST_DESKTOP%:/output" %IMAGE% >nul 2>nul
+docker run -d --name %CONTAINER% --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 -p 127.0.0.1:%PORT%:8095 -e OUTPUT_LABEL=Desktop -v "%HOST_DESKTOP%:/output" %IMAGE% >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] Failed to start Media Downloader container.
     exit /b 1

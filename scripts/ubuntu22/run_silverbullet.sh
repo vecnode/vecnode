@@ -206,7 +206,7 @@ echo ""
 
 if ! docker run -d --rm \
   --name silverbullet \
-  -p 3000:3000 \
+  -p 127.0.0.1:3000:3000 \
   -v "${SB_SPACE_PATH}":/space \
   -e SB_USER="user:password" \
   ghcr.io/silverbulletmd/silverbullet:latest >/dev/null; then

@@ -116,7 +116,7 @@ echo [INFO] Starting SilverBullet container from latest image.
 echo [INFO] SilverBullet will be available at http://localhost:3000
 echo.
 
-docker run -d --rm --name silverbullet -p 3000:3000 -v "%SB_SPACE_PATH%:/space" -e SB_USER="user:password" ghcr.io/silverbulletmd/silverbullet:latest >nul 2>nul
+docker run -d --rm --name silverbullet -p 127.0.0.1:3000:3000 -v "%SB_SPACE_PATH%:/space" -e SB_USER="user:password" ghcr.io/silverbulletmd/silverbullet:latest >nul 2>nul
 if errorlevel 1 (
     echo [ERROR] Docker run failed
     exit /b 1

@@ -33,9 +33,15 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL -o /tmp/tectonic.tar.gz \
 
 # Pre-warm the tectonic support bundle at build time so the FIRST PDF render is
 # fast and works offline (the TeX packages pandoc needs are baked into the image).
-RUN printf '# warmup\n\nHello, *world*.\n' | \
+# XDG_CACHE_HOME pins the cache to a fixed path that the non-root runtime user
+# (any uid — Linux runs with --user $(id -u)) can also read/extend.
+ENV XDG_CACHE_HOME=/opt/cache
+RUN mkdir -p /opt/cache && \
+    printf '# warmup\n\nHello, *world*.\n' | \
     pandoc -f markdown --pdf-engine=tectonic -o /tmp/warm.pdf - && \
-    rm -f /tmp/warm.pdf
+    rm -f /tmp/warm.pdf && \
+    chmod -R a+rwX /opt/cache && \
+    mkdir -p /outputs && chmod a+rwX /outputs
 
 # Install Python web dependencies
 RUN python3 -m pip install --no-cache-dir \
@@ -59,9 +65,16 @@ RUN sed -i 's/\r$//' /app/docker/media-processor/main.sh \
     chmod +x /app/docker/media-processor/main.sh && \
     chmod +x scripts/ubuntu22/*.sh
 
+# Run as a non-root user (defense-in-depth; the run scripts also drop all caps
+# and set no-new-privileges). On Linux the run script overrides this with
+# --user $(id -u):$(id -g) so PDFs written to the host Desktop stay user-owned.
+RUN useradd --create-home --uid 10001 app
+
 # Web access ports (UI + API)
 EXPOSE 8085
 EXPOSE 8086
+
+USER app
 
 # Run doc-processor web services by default.
 ENTRYPOINT ["/bin/bash", "/app/docker/media-processor/main.sh"]

@@ -152,6 +152,11 @@ handled globally by the Docker submenu's "remove containers" / "remove images". 
   **Chrome** (falling back to the default browser). Reuses a running container and
   `docker start`s a stopped one.
 - **stop**: `docker stop` the container but keep it (fast reopen).
+- **Security posture (keep when adding apps):** publish ports loopback-only
+  (`-p 127.0.0.1:<port>:<port>` — these are unauthenticated local UIs); locally built
+  images run as a non-root user (uid 10001; Linux scripts add `--user $(id -u):$(id -g)`
+  so bind-mount files stay user-owned) with `--cap-drop ALL`,
+  `--security-opt no-new-privileges` and `--pids-limit 512`. See SECURITY.md.
 
 Most apps pull a published image (SilverBullet `ghcr.io/silverbulletmd/silverbullet` port
 3000, Stirling-PDF `stirlingtools/stirling-pdf` port 8080). Several apps are built locally:

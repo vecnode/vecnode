@@ -53,7 +53,7 @@ if defined EXISTS (
     )
 ) else (
     echo [INFO] Running image '%IMAGE%'. First run downloads it; this can take a while...
-    docker run -d --name %CONTAINER% -p %PORT%:8080 %IMAGE% >nul 2>nul
+    docker run -d --name %CONTAINER% -p 127.0.0.1:%PORT%:8080 %IMAGE% >nul 2>nul
     if errorlevel 1 (
         echo [ERROR] Failed to start Stirling-PDF container.
         exit /b 1

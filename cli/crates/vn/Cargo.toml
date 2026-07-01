@@ -6,7 +6,6 @@ description = "vecnode cross-platform CLI"
 
 [dependencies]
 anyhow = { workspace = true }
-atty = { workspace = true }
 clap = { workspace = true }
 crossterm = { workspace = true }
 dirs = { workspace = true }

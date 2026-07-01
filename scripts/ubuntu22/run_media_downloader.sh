@@ -47,7 +47,7 @@ docker rm -f "${CONTAINER}" >/dev/null 2>&1 || true
 docker run -d --name "${CONTAINER}" \
   --user "$(id -u):$(id -g)" \
   --cap-drop ALL --security-opt no-new-privileges --pids-limit 512 \
-  -p "${PORT}:8095" \
+  -p "127.0.0.1:${PORT}:8095" \
   -e OUTPUT_LABEL=Desktop \
   -v "${HOST_DESKTOP}:/output" \
   "${IMAGE}" >/dev/null
