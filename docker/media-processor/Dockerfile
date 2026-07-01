@@ -42,7 +42,8 @@ RUN python3 -m pip install --no-cache-dir \
     --break-system-packages \
     fastapi==0.115.6 \
     "uvicorn[standard]==0.32.1" \
-    python-multipart==0.0.20
+    python-multipart==0.0.20 \
+    pypdf==5.1.0
 
 # Set working directory
 WORKDIR /app

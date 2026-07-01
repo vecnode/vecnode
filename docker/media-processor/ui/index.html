@@ -106,6 +106,28 @@
       </div>
       <pre id="pandocConvertStatus" class="pandoc-status"></pre>
     </section>
+
+    <hr class="section-divider" />
+
+    <section id="panelJoin" class="processor-panel active" role="tabpanel" aria-labelledby="tabJoin">
+      <h2 class="simple-title">Join PDFs</h2>
+      <p class="simple-subtitle">
+        Choose a folder in the Path Drop Zone above, then merge its PDFs into one file
+        (ordered by file name). The joined PDF is saved to your Desktop.
+      </p>
+      <div class="pandoc-options" aria-label="Join options">
+        <div class="pandoc-options-row">
+          <label class="option-field">
+            <span>Output file name</span>
+            <input id="joinOutputName" type="text" placeholder="joined.pdf" />
+          </label>
+        </div>
+      </div>
+      <div class="pandoc-actions">
+        <button id="joinPdfBtn" type="button">Join PDFs (by name)</button>
+      </div>
+      <pre id="joinStatus" class="pandoc-status"></pre>
+    </section>
   </main>
 
   <script src="./main.js"></script>
