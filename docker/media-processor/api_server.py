@@ -94,6 +94,94 @@ async def pandoc_markdown_to_pdf_viewer(
     )
 
 
+def natural_sort_key(value: str) -> list:
+    """Sort key so 'ch2.pdf' comes before 'ch10.pdf'. Mixed chunks are wrapped
+    in a (type, int, str) tuple so int and str never compare directly."""
+    key: list = []
+    for part in re.split(r"(\d+)", str(value).lower()):
+        if part.isdigit():
+            key.append((0, int(part), ""))
+        elif part:
+            key.append((1, 0, part))
+    return key
+
+
+def sanitize_pdf_name(name: str) -> str:
+    name = os.path.basename(str(name or "").strip())
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "", name).strip()
+    if not name:
+        return ""
+    if not name.lower().endswith(".pdf"):
+        name += ".pdf"
+    return name
+
+
+@app.post("/pdf/join")
+async def pdf_join(
+    files: list[UploadFile] = File(...),
+    paths: list[str] = Form(default=[]),
+    output_name: str = Form(default=""),
+) -> dict[str, object]:
+    """Merge the uploaded PDFs into one, ordered by their file path/name."""
+    try:
+        from pypdf import PdfWriter
+    except Exception as exc:  # pragma: no cover
+        raise HTTPException(status_code=500, detail=f"pypdf is not available: {exc}") from exc
+
+    started_at = time.perf_counter()
+
+    items: list[tuple[str, bytes]] = []
+    for index, upload in enumerate(files):
+        submitted = paths[index] if index < len(paths) else (upload.filename or f"file-{index}.pdf")
+        if not str(submitted).lower().endswith(".pdf"):
+            continue
+        items.append((submitted, await upload.read()))
+
+    if len(items) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="Select a folder with at least two PDF files to join.",
+        )
+
+    items.sort(key=lambda kv: natural_sort_key(kv[0]))
+
+    output_base, output_note = get_output_base_dir()
+    timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+    output_dir = output_base / f"pdf-join-{timestamp}"
+    output_dir.mkdir(parents=True, exist_ok=False)
+    out_name = sanitize_pdf_name(output_name) or "joined.pdf"
+    output_pdf = output_dir / out_name
+
+    order: list[str] = []
+    writer = PdfWriter()
+    try:
+        with tempfile.TemporaryDirectory(prefix="pdf-join-") as temp_root:
+            for i, (submitted, raw) in enumerate(items):
+                src = Path(temp_root) / f"{i:04d}.pdf"
+                src.write_bytes(raw)
+                try:
+                    writer.append(str(src))
+                except Exception as exc:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Could not read PDF {PurePosixPath(submitted).name}: {exc}",
+                    ) from exc
+                order.append(PurePosixPath(submitted).name)
+            with open(output_pdf, "wb") as fh:
+                writer.write(fh)
+    finally:
+        writer.close()
+
+    return {
+        "joined_count": len(items),
+        "order": order,
+        "output_folder": str(output_dir),
+        "output_file": out_name,
+        "duration_seconds": round(time.perf_counter() - started_at, 2),
+        "note": output_note,
+    }
+
+
 async def convert_markdown_to_pdf(
     files: list[UploadFile],
     paths: list[str],

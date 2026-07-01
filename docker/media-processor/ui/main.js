@@ -367,3 +367,71 @@ async function runMarkdownToPdfConversion({ endpoint, modeLabel, options = {} })
     window.clearInterval(progressTimer);
   }
 }
+
+// --- join PDFs (by name) ---
+const joinPdfBtn = document.getElementById("joinPdfBtn");
+const joinStatus = document.getElementById("joinStatus");
+const joinOutputName = document.getElementById("joinOutputName");
+
+function isPdfPath(pathValue) {
+  return /\.pdf$/i.test(String(pathValue || ""));
+}
+
+if (joinPdfBtn && joinStatus) {
+  joinPdfBtn.addEventListener("click", async () => {
+    const pdfEntries = Array.from(collectedFileMap.entries())
+      .filter(([pathValue]) => isPdfPath(pathValue))
+      .sort(([a], [b]) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
+
+    if (pdfEntries.length < 2) {
+      joinStatus.textContent =
+        "Select a folder with at least two PDF files first (use 'Choose Folder' above).";
+      return;
+    }
+
+    joinStatus.textContent =
+      `Joining ${pdfEntries.length} PDF(s) in this order:\n` +
+      pdfEntries.map(([pathValue], i) => `${i + 1}. ${pathValue}`).join("\n");
+
+    const form = new FormData();
+    for (const [pathValue, file] of pdfEntries) {
+      form.append("files", file, pathValue);
+      form.append("paths", pathValue);
+    }
+    const outName = String(joinOutputName?.value || "").trim();
+    if (outName) form.append("output_name", outName);
+
+    const startedAt = performance.now();
+    const timer = window.setInterval(() => {
+      const elapsed = (performance.now() - startedAt) / 1000;
+      joinStatus.textContent =
+        `Joining ${pdfEntries.length} PDF(s)...\nElapsed: ${formatSeconds(elapsed)}`;
+    }, 700);
+
+    try {
+      const res = await fetch("http://localhost:8086/pdf/join", { method: "POST", body: form });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }));
+        throw new Error(err.detail || res.statusText);
+      }
+      const data = await res.json();
+      const lines = [
+        `Joined ${data.joined_count} PDF(s)`,
+        `Output folder: ${data.output_folder}`,
+        `Output file: ${data.output_file}`,
+        `Time: ${formatSeconds(Number(data.duration_seconds || 0))}`,
+      ];
+      if (Array.isArray(data.order) && data.order.length) {
+        lines.push("", "Merge order:", ...data.order.map((n, i) => `${i + 1}. ${n}`));
+      }
+      if (data.note) {
+        lines.push("", `Note: ${data.note}`);
+      }
+      joinStatus.textContent = lines.join("\n");
+    } catch (error) {
+      joinStatus.textContent = "Error: " + error.message;
+    } finally {
+      window.clearInterval(timer);
+    }
+  });
+}
