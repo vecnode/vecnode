@@ -101,9 +101,13 @@ The TUI Open menu launches local web apps in Docker. Their shared posture:
   `-p 127.0.0.1:<port>:<port>`, so nothing is reachable from the LAN. If you
   deliberately expose one, put authentication in front of it first.
 - **Locally built apps run as a non-root user** (uid 10001 baked into the
-  image; on Linux the run scripts pass `--user $(id -u):$(id -g)` so files
-  written to bind mounts stay owned by you), with `--cap-drop ALL`,
+  image; on Linux `vn` passes `--user $(id -u):$(id -g)` so files written to
+  bind mounts stay owned by you), with `--cap-drop ALL`,
   `--security-opt no-new-privileges`, and `--pids-limit 512`.
+- All of this is enforced by **one Rust code path**
+  ([cli/crates/vn/src/commands/apps.rs](cli/crates/vn/src/commands/apps.rs), the
+  `vn app open|stop` engine) instead of per-OS scripts, so the posture cannot
+  drift between platforms.
 
 Per-app threat model:
 

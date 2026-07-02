@@ -16,7 +16,7 @@ A small pandoc document processor (Markdown → PDF) with:
 
 Use the TUI action:
 
-- vn run win11-open-doc-processor
+- vn app open doc-processor
 
 This script builds the image, starts the container, waits for health, and opens the browser.
 
@@ -72,4 +72,4 @@ docker ps --filter "name=vecnode-doc-processor"
 ## Troubleshooting
 
 - If Docker is not running, start Docker Desktop and retry.
-- If ports are busy, free 8085/8086 or adjust mappings in scripts/win11/open_doc_processor.bat.
+- If ports are busy, free 8085/8086 (the launcher is native: `vn app open doc-processor`).

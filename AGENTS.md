@@ -16,10 +16,11 @@ is a Rust binary that exposes:
 - A **Windows system-tray agent** (`vn tray`) that stays resident as a small icon and
   spawns new elevated TUI terminals on demand.
 
-Most heavy lifting (network checks, docker, github sync, ollama, etc.) is delegated to
-per-OS scripts under `scripts/ubuntu22/*.sh` and `scripts/win11/*.bat`, which `vn run`
-locates and executes. Newer, performance-sensitive work (e.g. open-port scanning) is
-implemented natively in Rust instead.
+Genuinely OS-specific work (dependency installs, ollama setup, dotfiles, starting
+Docker Desktop) is delegated to per-OS scripts under `scripts/ubuntu22/*.sh` and
+`scripts/win11/*.bat`, which `vn run` locates and executes. Everything cross-platform —
+port scanning (`vn net`), and all Docker app launching/maintenance (`vn app`,
+`vn docker`) — is implemented natively in Rust so there is one code path, not two.
 
 ## How it runs (the resident-tray model)
 
@@ -58,9 +59,10 @@ cli/                       Cargo workspace
       commands/
         mod.rs             Module list
         ai.rs              vn ai status|models|pull|chat (Ollama via the ollama-rs crate)
+        apps.rs            vn app open|stop|list — native Docker app engine (see below)
         ollama/session.rs  Chat session persistence (per-session message history)
         sys.rs             vn sys info|update|clean (uses sysinfo)
-        docker.rs          vn docker ps|up|down|prune
+        docker.rs          vn docker ps|up|down|prune|check|stop-all|remove-*
         git.rs             vn git sync|status
         net.rs             vn net scan — RustScan-based open-port scan (native Rust)
         run.rs             vn run <name> — maps script names to scripts/** and executes
@@ -101,10 +103,12 @@ as a child process with those args (e.g. `["run", "win11-check-internet"]` or
 `["net", "scan"]`), piping stdout/stderr into the "CLI Output" panel. So adding a TUI
 action = add a `CommandItem` pointing at an existing `vn` subcommand.
 
-`commands/run.rs` `map_script()` is a big match from a script name to a relative path
+`commands/run.rs` `map_script()` is a match from a script name to a relative path
 under `scripts/`. To add a script-backed task: drop the script in the right OS folder,
 add a `map_script` arm, and wire a `CommandItem` for it. Menu items are OS-gated by
-`menu_allowed_on_current_os`.
+`menu_allowed_on_current_os`. Docker-app names are intercepted first by `try_native()`
+and routed to `commands/apps.rs` — scripts are only for genuinely OS-specific work
+(package installs, ollama, dotfiles, Docker Desktop startup).
 
 Repo root is resolved via `--repo-root`, `VECNODE_REPO_ROOT`, the config location, or
 by walking up for a dir that has both `.git/` and `scripts/`.
@@ -140,37 +144,41 @@ routed to `vn ai pull` / `vn ai chat`. Output streams into the CLI Output panel 
 session log file like any other command. The Ollama *server* itself still needs to be
 installed/running — that is what the `check-ollama` / `open-ollama` scripts handle.
 
-## Dockerized apps (Open menu)
+## Dockerized apps (Open menu) — native `vn app`
 
-The TUI **Open** submenu launches/controls self-hosted web apps in Docker. Each app is a
-matched pair of `scripts/win11/*.bat` + `scripts/ubuntu22/*.sh`, wired through `run.rs`
-and `menu_items`. The menu is for opening/stopping apps only — image/container cleanup is
-handled globally by the Docker submenu's "remove containers" / "remove images". Per app:
+The TUI **Open** submenu launches/controls self-hosted web apps in Docker through **one
+cross-platform Rust code path**: [cli/crates/vn/src/commands/apps.rs](cli/crates/vn/src/commands/apps.rs).
+There are **no per-OS launch scripts anymore** — the old `run_*/stop_*` `.bat`/`.sh` pairs
+were replaced by:
 
-- **open** (e.g. `run_stirling_pdf`): check Docker, then run/start the container (the
-  image is pulled on first run), wait for the port to respond, and open the web UI in
-  **Chrome** (falling back to the default browser). Reuses a running container and
-  `docker start`s a stopped one.
-- **stop**: `docker stop` the container but keep it (fast reopen).
-- **Security posture (keep when adding apps):** publish ports loopback-only
-  (`-p 127.0.0.1:<port>:<port>` — these are unauthenticated local UIs); locally built
-  images run as a non-root user (uid 10001; Linux scripts add `--user $(id -u):$(id -g)`
-  so bind-mount files stay user-owned) with `--cap-drop ALL`,
-  `--security-opt no-new-privileges` and `--pids-limit 512`. See SECURITY.md.
+- `vn app open <name> [--no-open]` — check Docker, build (local apps) or pull the image,
+  create/start the container, wait for the port, open **Chrome** (default-browser fallback).
+- `vn app stop <name>` — stop the container (kept for fast reopen where applicable).
+- `vn app list` — the app registry.
+- `vn docker check|stop-all|remove-containers|remove-images` — global maintenance.
 
-Most apps pull a published image (SilverBullet `ghcr.io/silverbulletmd/silverbullet` port
-3000, Stirling-PDF `stirlingtools/stirling-pdf` port 8080). Several apps are built locally:
-**library-portal** (port 8090), **doc-processor** (pandoc→PDF; ports 8085/8086, image source
-`docker/media-processor/`), and **media-downloader** (port 8095). To add a pulled-image app,
-copy the Stirling-PDF open/stop script pair, change the image/port/container name, add the
-`run.rs` mappings, and add the `CommandItem`s to both Open submenus.
+Legacy names still work: `vn run win11-open-library-portal` etc. route to the native
+implementation (see `try_native` in `run.rs`), so old muscle memory and docs don't break.
+
+Every app is an `AppPlan` in `plan_for()` — image, container, optional build context,
+lifecycle (`Recreate` vs `Reuse` running/stopped), ports, env, mounts, readiness port.
+**To add an app: add one `plan_for` arm and a `CommandItem` in both Open submenus.**
+The engine enforces the security posture automatically (don't bypass it): ports published
+**loopback-only** (`127.0.0.1`), `--cap-drop ALL`, `--security-opt no-new-privileges`,
+`--pids-limit` for locally built images, and on Linux `--user $(id -u):$(id -g)` where the
+plan sets `linux_user` (so bind-mount files stay user-owned). See SECURITY.md.
+
+Apps: SilverBullet (`ghcr.io/silverbulletmd/silverbullet`, port 3000, backs up the space
+folder to Desktop before each start), Stirling-PDF (`stirlingtools/stirling-pdf`, port 8080,
+reuses its container), docs (mdBook, port 3000), plus the locally built **library-portal**
+(8090), **doc-processor** (8085/8086, image source `docker/media-processor/`) and
+**media-downloader** (8095), which rebuild + recreate on every open (picks up code edits).
 
 **media-downloader (custom, locally built):** a tiny yt-dlp + ffmpeg web app in
 [docker/media-downloader/](docker/media-downloader/) — `debian:12-slim` + a single stdlib
 `app.py`. `yt-dlp` is installed via `pip` (the Debian apt package is years stale and breaks
 against current sites). Paste a video URL, pick **MP3 / WAV / MP4**; the file is saved to the
-host **Desktop**, which `run_media_downloader.*` bind-mounts at `/output` (port 8095, opens
-Chrome). Because it fetches arbitrary web links, it is hardened: the container runs **non-root**
+host **Desktop**, bind-mounted at `/output` by `vn app open media-downloader` (port 8095). Because it fetches arbitrary web links, it is hardened: the container runs **non-root**
 (Linux uses `--user $(id -u):$(id -g)`), with **`--cap-drop ALL`**, **`--security-opt
 no-new-privileges`** and a pids limit; the app accepts only http/https URLs, **rejects hosts
 that resolve to loopback/private/link-local** (basic SSRF guard), runs yt-dlp with
@@ -180,7 +188,7 @@ traversal-checked, collision-safe filename confined to the mount.
 **library-portal (custom, locally built):** a lightweight viewer/manager for the repo's
 `library/` folder, living in [docker/library-portal/](docker/library-portal/) —
 `python:3.12-slim` + a single stdlib `app.py`, plus PyMuPDF for thumbnails.
-`run_library_portal.*` `docker build`s the image (the build context is only
+`vn app open library-portal` builds the image (the build context is only
 `docker/library-portal/`, so **no PDFs enter the image**), then runs it with the repo
 `library/` bind-mounted on port 8090 and opens Chrome. The server walks `/library` per
 request and renders an Anthropic-style index, streaming PDFs inline for the browser viewer.

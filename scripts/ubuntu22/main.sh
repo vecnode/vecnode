@@ -241,7 +241,8 @@ while true; do
 
       if [[ "$SILVERBULLET_CHOICE" == "1" ]]; then
         echo ""
-        "$SCRIPT_DIR/run_silverbullet.sh"
+        echo "[INFO] SilverBullet is now launched natively by vn."
+        echo "[INFO] Run:  vn app open silverbullet"
         echo ""
         continue
       fi

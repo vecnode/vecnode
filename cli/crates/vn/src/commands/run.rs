@@ -10,6 +10,12 @@ pub fn run(args: RunArgs, loaded: &LoadedConfig) -> Result<()> {
 }
 
 pub fn run_named_script(name: &str, loaded: &LoadedConfig) -> Result<()> {
+    // Container tasks were moved from per-OS scripts into Rust (commands::apps);
+    // legacy names keep working by routing there.
+    if let Some(result) = try_native(name, loaded) {
+        return result;
+    }
+
     let repo_root = detect_repo_root(loaded)?;
     let target = map_script(name)?;
     let path = repo_root.join(target.relative_path);
@@ -24,6 +30,36 @@ pub fn run_named_script(name: &str, loaded: &LoadedConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+
+/// Legacy script names now handled natively by `vn app` / `vn docker`.
+fn try_native(name: &str, loaded: &LoadedConfig) -> Option<Result<()>> {
+    use crate::commands::apps;
+    let key = name.to_ascii_lowercase();
+    let stripped = key
+        .strip_prefix("win11-")
+        .or_else(|| key.strip_prefix("ubuntu22-"))
+        .unwrap_or(&key);
+    let result = match stripped {
+        "open-docs" => apps::open("docs", loaded, false),
+        "silverbullet" | "run-silverbullet" | "open-silverbullet" => {
+            apps::open("silverbullet", loaded, false)
+        }
+        "open-stirling-pdf" => apps::open("stirling-pdf", loaded, false),
+        "stop-stirling-pdf" => apps::stop("stirling-pdf", loaded),
+        "open-library-portal" => apps::open("library-portal", loaded, false),
+        "stop-library-portal" => apps::stop("library-portal", loaded),
+        "open-media-downloader" => apps::open("media-downloader", loaded, false),
+        "stop-media-downloader" => apps::stop("media-downloader", loaded),
+        "open-doc-processor" => apps::open("doc-processor", loaded, false),
+        "check-docker" => apps::docker_check(),
+        "stop-all-containers" => apps::docker_stop_all(),
+        "remove-containers" | "remove-all-containers" => apps::docker_remove_containers(),
+        "remove-images" | "remove-all-images" => apps::docker_remove_images(),
+        _ => return None,
+    };
+    Some(result)
 }
 
 struct ScriptTarget {
@@ -43,18 +79,6 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "ubuntu22-check-dependencies" => ScriptTarget {
             relative_path: "scripts/ubuntu22/check_dependencies.sh",
         },
-        "ubuntu22-check-docker" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/check_docker.sh",
-        },
-        "ubuntu22-stop-all-containers" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/stop_all_containers.sh",
-        },
-        "ubuntu22-remove-all-containers" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/remove_containers.sh",
-        },
-        "ubuntu22-remove-all-images" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/remove_images.sh",
-        },
         "ubuntu22-download-all-repos" => ScriptTarget {
             relative_path: "scripts/ubuntu22/download_all_repos.sh",
         },
@@ -64,51 +88,14 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "ubuntu22-open-docker" => ScriptTarget {
             relative_path: "scripts/ubuntu22/open_docker.sh",
         },
-        "ubuntu22-open-docs" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/open_docs.sh",
-        },
-        "ubuntu22-open-doc-processor" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/open_doc_processor.sh",
-        },
         "ubuntu22-run-cli-container" => ScriptTarget {
             relative_path: "scripts/ubuntu22/run_cli_container.sh",
-        },
-        "ubuntu22-run-silverbullet" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/run_silverbullet.sh",
-        },
-        "ubuntu22-open-silverbullet" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/run_silverbullet.sh",
-        },
-        "ubuntu22-open-stirling-pdf" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/run_stirling_pdf.sh",
-        },
-        "ubuntu22-stop-stirling-pdf" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/stop_stirling_pdf.sh",
-        },
-        "ubuntu22-open-library-portal" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/run_library_portal.sh",
-        },
-        "ubuntu22-stop-library-portal" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/stop_library_portal.sh",
-        },
-        "ubuntu22-open-media-downloader" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/run_media_downloader.sh",
-        },
-        "ubuntu22-stop-media-downloader" => ScriptTarget {
-            relative_path: "scripts/ubuntu22/stop_media_downloader.sh",
         },
         "ubuntu22-check-ollama" => ScriptTarget {
             relative_path: "scripts/ubuntu22/check_ollama.sh",
         },
         "ubuntu22-open-ollama" => ScriptTarget {
             relative_path: "scripts/ubuntu22/open_ollama.sh",
-        },
-        "silverbullet" => ScriptTarget {
-            relative_path: if cfg!(windows) {
-                "scripts/win11/run_silverbullet.bat"
-            } else {
-                "scripts/ubuntu22/run_silverbullet.sh"
-            },
         },
         "check-internet" => ScriptTarget {
             relative_path: if is_linux {
@@ -124,46 +111,11 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
                 "scripts/win11/check_dependencies.bat"
             },
         },
-        "check-docker" => ScriptTarget {
-            relative_path: if is_linux {
-                "scripts/ubuntu22/check_docker.sh"
-            } else {
-                "scripts/win11/check_docker.bat"
-            },
-        },
-        "remove-containers" => ScriptTarget {
-            relative_path: if is_linux {
-                "scripts/ubuntu22/remove_containers.sh"
-            } else {
-                "scripts/win11/remove_containers.bat"
-            },
-        },
-        "remove-images" => ScriptTarget {
-            relative_path: if is_linux {
-                "scripts/ubuntu22/remove_images.sh"
-            } else {
-                "scripts/win11/remove_images.bat"
-            },
-        },
         "open-docker" => ScriptTarget {
             relative_path: if is_linux {
                 "scripts/ubuntu22/open_docker.sh"
             } else {
                 "scripts/win11/open_docker.bat"
-            },
-        },
-        "open-docs" => ScriptTarget {
-            relative_path: if is_linux {
-                "scripts/ubuntu22/open_docs.sh"
-            } else {
-                "scripts/win11/open_docs.bat"
-            },
-        },
-        "open-doc-processor" => ScriptTarget {
-            relative_path: if is_linux {
-                "scripts/ubuntu22/open_doc_processor.sh"
-            } else {
-                "scripts/win11/open_doc_processor.bat"
             },
         },
         "download-all-repos" => ScriptTarget {
@@ -185,13 +137,6 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
                 "scripts/ubuntu22/run_cli_container.sh"
             } else {
                 "scripts/win11/run_cli_container.bat"
-            },
-        },
-        "open-silverbullet" => ScriptTarget {
-            relative_path: if is_linux {
-                "scripts/ubuntu22/run_silverbullet.sh"
-            } else {
-                "scripts/win11/run_silverbullet.bat"
             },
         },
         "check-ollama" => ScriptTarget {
@@ -226,50 +171,11 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         "win11-open-docker" => ScriptTarget {
             relative_path: "scripts/win11/open_docker.bat",
         },
-        "win11-open-docs" => ScriptTarget {
-            relative_path: "scripts/win11/open_docs.bat",
-        },
-        "win11-check-docker" => ScriptTarget {
-            relative_path: "scripts/win11/check_docker.bat",
-        },
-        "win11-stop-all-containers" => ScriptTarget {
-            relative_path: "scripts/win11/stop_all_containers.bat",
-        },
-        "win11-remove-all-containers" => ScriptTarget {
-            relative_path: "scripts/win11/remove_containers.bat",
-        },
-        "win11-remove-all-images" => ScriptTarget {
-            relative_path: "scripts/win11/remove_images.bat",
-        },
         "win11-download-all-orgs" => ScriptTarget {
             relative_path: "scripts/win11/download_all_orgs.bat",
         },
         "win11-run-cli-container" => ScriptTarget {
             relative_path: "scripts/win11/run_cli_container.bat",
-        },
-        "win11-open-silverbullet" => ScriptTarget {
-            relative_path: "scripts/win11/run_silverbullet.bat",
-        },
-        "win11-open-stirling-pdf" => ScriptTarget {
-            relative_path: "scripts/win11/run_stirling_pdf.bat",
-        },
-        "win11-stop-stirling-pdf" => ScriptTarget {
-            relative_path: "scripts/win11/stop_stirling_pdf.bat",
-        },
-        "win11-open-library-portal" => ScriptTarget {
-            relative_path: "scripts/win11/run_library_portal.bat",
-        },
-        "win11-stop-library-portal" => ScriptTarget {
-            relative_path: "scripts/win11/stop_library_portal.bat",
-        },
-        "win11-open-media-downloader" => ScriptTarget {
-            relative_path: "scripts/win11/run_media_downloader.bat",
-        },
-        "win11-stop-media-downloader" => ScriptTarget {
-            relative_path: "scripts/win11/stop_media_downloader.bat",
-        },
-        "win11-open-doc-processor" => ScriptTarget {
-            relative_path: "scripts/win11/open_doc_processor.bat",
         },
         "win11-check-ollama" => ScriptTarget {
             relative_path: "scripts/win11/check_ollama.bat",
@@ -365,7 +271,7 @@ fn windows_path_to_wsl(path: &Path) -> Result<String> {
     Ok(format!("/mnt/{}/{}", drive, rest.trim_start_matches('/')))
 }
 
-fn detect_repo_root(loaded: &LoadedConfig) -> Result<PathBuf> {
+pub(crate) fn detect_repo_root(loaded: &LoadedConfig) -> Result<PathBuf> {
     if let Ok(path) = env::var("VECNODE_REPO_ROOT") {
         let p = PathBuf::from(&path);
         if is_valid_repo_root(&p) {
