@@ -268,7 +268,8 @@ set /p SILVERBULLET_CHOICE="Enter your choice (1, 2, or 3): "
 
 if "%SILVERBULLET_CHOICE%"=="1" (
     echo.
-    call "%~dp0run_silverbullet.bat"
+    echo [INFO] SilverBullet is now launched natively by vn.
+    echo [INFO] Run:  vn app open silverbullet
     echo.
     goto :silverbullet_menu
 )

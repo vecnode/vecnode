@@ -7,9 +7,13 @@ pub fn run(args: DockerArgs, loaded: &LoadedConfig) -> Result<()> {
     match args.command {
         DockerSubcommand::Ps => run_cmd("docker", &["ps"]),
         DockerSubcommand::Prune => run_cmd("docker", &["system", "prune", "-af"]),
+        DockerSubcommand::Check => crate::commands::apps::docker_check(),
+        DockerSubcommand::StopAll => crate::commands::apps::docker_stop_all(),
+        DockerSubcommand::RemoveContainers => crate::commands::apps::docker_remove_containers(),
+        DockerSubcommand::RemoveImages => crate::commands::apps::docker_remove_images(),
         DockerSubcommand::Up { service } => {
             if matches!(service.as_deref(), Some("silverbullet")) {
-                crate::commands::run::run_named_script("silverbullet", loaded)
+                crate::commands::apps::open("silverbullet", loaded, false)
             } else if let Some(name) = service {
                 validate_docker_service_name(&name)?;
                 run_cmd("docker", &["start", &name])

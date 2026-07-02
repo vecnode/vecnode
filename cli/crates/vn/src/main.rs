@@ -24,6 +24,7 @@ struct Cli {
 #[derive(Subcommand, Debug)]
 enum Command {
     Ai(AiArgs),
+    App(AppArgs),
     Sys(SysArgs),
     Docker(DockerArgs),
     Git(GitArgs),
@@ -31,6 +32,28 @@ enum Command {
     Run(RunArgs),
     Tray,
     Tui,
+}
+
+#[derive(clap::Args, Debug)]
+struct AppArgs {
+    #[command(subcommand)]
+    command: AppCommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum AppCommand {
+    /// Build/pull and start a Dockerized app, then open it in the browser.
+    Open {
+        /// App name (see `vn app list`).
+        name: String,
+        /// Do not open a browser after the app is ready.
+        #[arg(long)]
+        no_open: bool,
+    },
+    /// Stop an app's container (kept for fast reopen where applicable).
+    Stop { name: String },
+    /// List the available apps.
+    List,
 }
 
 #[derive(clap::Args, Debug)]
@@ -109,6 +132,14 @@ enum DockerSubcommand {
     Up { service: Option<String> },
     Down { service: Option<String> },
     Prune,
+    /// Check the Docker daemon and show container/image counts.
+    Check,
+    /// Stop every running container.
+    StopAll,
+    /// Stop and remove every container.
+    RemoveContainers,
+    /// Remove every image.
+    RemoveImages,
 }
 
 #[derive(clap::Args, Debug)]
@@ -131,6 +162,11 @@ async fn main() -> Result<()> {
 
     match cli.command {
         Some(Command::Ai(args)) => commands::ai::run(args, &loaded).await?,
+        Some(Command::App(args)) => match args.command {
+            AppCommand::Open { name, no_open } => commands::apps::open(&name, &loaded, no_open)?,
+            AppCommand::Stop { name } => commands::apps::stop(&name, &loaded)?,
+            AppCommand::List => commands::apps::list()?,
+        },
         Some(Command::Sys(args)) => commands::sys::run(args)?,
         Some(Command::Docker(args)) => commands::docker::run(args, &loaded)?,
         Some(Command::Git(args)) => commands::git::run(args)?,

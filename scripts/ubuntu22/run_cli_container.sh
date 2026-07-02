@@ -45,7 +45,7 @@ if ! detect_dockerfile_path; then
   echo "  - $REPO_ROOT/docker/Dockerfile"
   echo "  - $REPO_ROOT/docker/media-processor/Dockerfile"
   echo "[INFO] You can override with VECNODE_CLI_DOCKERFILE=/absolute/path/to/Dockerfile"
-  echo "[INFO] For doc-processor ports 8085/8086, run: bash $REPO_ROOT/scripts/ubuntu22/open_doc_processor.sh"
+  echo "[INFO] For doc-processor ports 8085/8086, run: vn app open doc-processor"
   exit 1
 fi
 

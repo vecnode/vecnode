@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod apps;
 pub mod docker;
 pub mod git;
 pub mod net;
