@@ -104,6 +104,11 @@ The TUI Open menu launches local web apps in Docker. Their shared posture:
   image; on Linux `vn` passes `--user $(id -u):$(id -g)` so files written to
   bind mounts stay owned by you), with `--cap-drop ALL`,
   `--security-opt no-new-privileges`, and `--pids-limit 512`.
+- **Pulled vendor images (SilverBullet, Stirling-PDF) are not cap-dropped**:
+  their entrypoints legitimately need privilege transitions (Stirling-PDF
+  `setpriv`s from root to its app user, which requires CAP_SETUID/SETGID and
+  breaks under `--cap-drop ALL`). They run as upstream intends, protected by
+  the loopback-only binding.
 - All of this is enforced by **one Rust code path**
   ([cli/crates/vn/src/commands/apps.rs](cli/crates/vn/src/commands/apps.rs), the
   `vn app open|stop` engine) instead of per-OS scripts, so the posture cannot
@@ -116,7 +121,7 @@ Per-app threat model:
 | library-portal | 8090 | `library/` read-write | Unauthenticated UI that can rename/move/delete PDFs - safe only because it is loopback-bound. State kept in `library/.portal/`. |
 | doc-processor | 8085/8086 | host Desktop read-write | pandoc/tectonic markdown-to-PDF + pypdf join; output confined to the Desktop mount. |
 | media-downloader | 8095 | host Desktop read-write | Fetches **untrusted URLs** (yt-dlp): http/https only, hosts resolving to loopback/private/link-local ranges are refused (SSRF guard), `--ignore-config --restrict-filenames --no-exec --max-filesize`, sanitized traversal-checked collision-safe output names. Known limit: a public URL redirecting to a private IP is not caught. |
-| SilverBullet / Stirling-PDF / docs | 3000/8080 | space/none | Pulled published images. SilverBullet uses a default `SB_USER=user:password` credential - acceptable only while loopback-bound; change it before any wider exposure. |
+| SilverBullet / Stirling-PDF / docs | 3000/8080 | space/none | Pulled published images (docs is local). SilverBullet uses a default `SB_USER=user:password` credential and Stirling-PDF's login page is disabled (`SECURITY_ENABLELOGIN=false`) - both acceptable only while loopback-bound; change them before any wider exposure. |
 
 Image supply chain: base images are pinned tags (`debian:12-slim`,
 `python:3.12-slim`); Python deps are version-pinned except `yt-dlp`, which is
