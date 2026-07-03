@@ -111,14 +111,21 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
             pids_limit: None,
             linux_user: false,
             ports: vec![(8080, 8080)],
-            // Stirling v2+ enables a login page by default; this is a
-            // loopback-only local tool, so keep the old zero-friction UX.
-            env: vec![("SECURITY_ENABLELOGIN".into(), "false".into())],
+            // Free core only, fully local: DISABLE_ADDITIONAL_FEATURES
+            // turns off the premium/license/login module (v7 enables it by
+            // default), and the other two stop the posthog analytics and the
+            // update-check pings. This is a loopback-only local tool.
+            env: vec![
+                ("DISABLE_ADDITIONAL_FEATURES".into(), "true".into()),
+                ("SECURITY_ENABLELOGIN".into(), "false".into()),
+                ("SYSTEM_ENABLEANALYTICS".into(), "false".into()),
+                ("SYSTEM_SHOWUPDATE".into(), "false".into()),
+            ],
             mounts: vec![],
             wait_port: 8080,
             wait_tries: 40,
             open_url: "http://localhost:8080".into(),
-            info: vec!["Login disabled (loopback-only local tool).".into()],
+            info: vec!["Free core only: premium module, analytics and update checks disabled.".into()],
         },
         "library-portal" => {
             let root = repo_root(loaded)?;
@@ -587,12 +594,22 @@ fn open_browser(url: &str) {
         for candidate in chrome_candidates.into_iter().flatten() {
             if candidate.exists() {
                 println!("[INFO] Opening Chrome at {url}");
-                let _ = Command::new(candidate).arg(url).spawn();
+                let _ = Command::new(candidate)
+                    .arg(url)
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn();
                 return;
             }
         }
         println!("[INFO] Chrome not found; opening default browser at {url}");
-        let _ = Command::new("cmd").args(["/C", "start", "", url]).spawn();
+        let _ = Command::new("cmd")
+            .args(["/C", "start", "", url])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
     }
     #[cfg(target_os = "linux")]
     {
