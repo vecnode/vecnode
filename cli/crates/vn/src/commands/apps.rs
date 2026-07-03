@@ -37,8 +37,12 @@ struct AppPlan {
     /// (build context, optional -f dockerfile) — None means a pulled image.
     build: Option<(PathBuf, Option<PathBuf>)>,
     lifecycle: Lifecycle,
-    /// --cap-drop ALL --security-opt no-new-privileges (all apps).
-    /// --pids-limit only for locally built images with known process counts.
+    /// Apply --cap-drop ALL --security-opt no-new-privileges (+ pids limit).
+    /// True for our locally built images (they run non-root and need no caps);
+    /// false for pulled vendor images whose entrypoints legitimately need
+    /// privilege transitions (e.g. Stirling-PDF setpriv's from root to its
+    /// app user, which requires CAP_SETUID/SETGID).
+    harden: bool,
     pids_limit: Option<u32>,
     /// Linux: pass --user $(uid):$(gid) so bind-mount files stay user-owned.
     #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
@@ -67,6 +71,7 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
                 image: "vecnode-docs:latest".into(),
                 build: Some((root.join("docs"), Some(root.join("docs").join("Dockerfile")))),
                 lifecycle: Lifecycle::Recreate { rm_on_exit: false },
+                harden: true,
                 pids_limit: Some(512),
                 linux_user: false,
                 ports: vec![(3000, 3000)],
@@ -83,6 +88,7 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
             image: "ghcr.io/silverbulletmd/silverbullet:latest".into(),
             build: None,
             lifecycle: Lifecycle::Recreate { rm_on_exit: true },
+            harden: false,
             pids_limit: None,
             linux_user: false,
             ports: vec![(3000, 3000)],
@@ -101,15 +107,18 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
             image: "stirlingtools/stirling-pdf:latest".into(),
             build: None,
             lifecycle: Lifecycle::Reuse,
+            harden: false,
             pids_limit: None,
             linux_user: false,
             ports: vec![(8080, 8080)],
-            env: vec![],
+            // Stirling v2+ enables a login page by default; this is a
+            // loopback-only local tool, so keep the old zero-friction UX.
+            env: vec![("SECURITY_ENABLELOGIN".into(), "false".into())],
             mounts: vec![],
             wait_port: 8080,
             wait_tries: 40,
             open_url: "http://localhost:8080".into(),
-            info: vec![],
+            info: vec!["Login disabled (loopback-only local tool).".into()],
         },
         "library-portal" => {
             let root = repo_root(loaded)?;
@@ -118,6 +127,7 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
                 image: "vecnode-library-portal".into(),
                 build: Some((root.join("docker").join("library-portal"), None)),
                 lifecycle: Lifecycle::Recreate { rm_on_exit: false },
+                harden: true,
                 pids_limit: Some(512),
                 linux_user: true,
                 ports: vec![(8090, 8090)],
@@ -138,6 +148,7 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
                 image: "vecnode-media-downloader".into(),
                 build: Some((root.join("docker").join("media-downloader"), None)),
                 lifecycle: Lifecycle::Recreate { rm_on_exit: false },
+                harden: true,
                 pids_limit: Some(512),
                 linux_user: true,
                 ports: vec![(8095, 8095)],
@@ -159,6 +170,7 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
                     Some(root.join("docker").join("media-processor").join("Dockerfile")),
                 )),
                 lifecycle: Lifecycle::Recreate { rm_on_exit: true },
+                harden: true,
                 pids_limit: Some(512),
                 linux_user: true,
                 ports: vec![(8085, 8085), (8086, 8086)],
@@ -212,13 +224,21 @@ pub fn open(name: &str, loaded: &LoadedConfig, no_open: bool) -> Result<()> {
             println!("[OK] Container started: {}", plan.container);
         }
         Lifecycle::Reuse => {
-            if container_state(plan.container)? == ContainerState::Running {
+            let state = container_state(plan.container)?;
+            if state == ContainerState::Running {
                 println!("[OK] Container '{}' is already running.", plan.container);
-            } else if container_state(plan.container)? == ContainerState::Stopped {
+            } else if state == ContainerState::Stopped && container_exit_code(plan.container)? == 0 {
                 println!("[INFO] Starting existing container '{}'...", plan.container);
                 docker_quiet(&["start", plan.container])
                     .with_context(|| format!("failed to start container {}", plan.container))?;
             } else {
+                if state == ContainerState::Stopped {
+                    println!(
+                        "[INFO] Container '{}' previously exited with an error; recreating it...",
+                        plan.container
+                    );
+                    let _ = docker_quiet(&["rm", "-f", plan.container]);
+                }
                 println!(
                     "[INFO] Running image '{}'. First run downloads it; this can take a while...",
                     plan.image
@@ -230,7 +250,7 @@ pub fn open(name: &str, loaded: &LoadedConfig, no_open: bool) -> Result<()> {
     }
 
     println!("[INFO] Waiting for {} ...", plan.open_url);
-    if wait_for_port(plan.wait_port, plan.wait_tries) {
+    if wait_ready(&plan)? {
         println!("[OK] {} is ready.", name);
     } else {
         println!("[WARNING] {} did not respond yet; opening the browser anyway.", name);
@@ -356,14 +376,17 @@ fn run_container(plan: &AppPlan, rm_on_exit: bool) -> Result<()> {
     args.push("--name".into());
     args.push(plan.container.into());
 
-    // Shared security posture (see SECURITY.md).
-    args.push("--cap-drop".into());
-    args.push("ALL".into());
-    args.push("--security-opt".into());
-    args.push("no-new-privileges".into());
-    if let Some(limit) = plan.pids_limit {
-        args.push("--pids-limit".into());
-        args.push(limit.to_string());
+    // Security posture for our own images (see SECURITY.md). Pulled vendor
+    // images run as upstream intends - their entrypoints may need caps.
+    if plan.harden {
+        args.push("--cap-drop".into());
+        args.push("ALL".into());
+        args.push("--security-opt".into());
+        args.push("no-new-privileges".into());
+        if let Some(limit) = plan.pids_limit {
+            args.push("--pids-limit".into());
+            args.push(limit.to_string());
+        }
     }
     #[cfg(target_os = "linux")]
     if plan.linux_user {
@@ -483,19 +506,68 @@ fn run_docker_streaming(args: &[String]) -> Result<()> {
     Ok(())
 }
 
-fn wait_for_port(port: u16, tries: u32) -> bool {
-    for _ in 0..tries {
-        if TcpStream::connect_timeout(
-            &([127, 0, 0, 1], port).into(),
-            Duration::from_secs(2),
-        )
-        .is_ok()
-        {
-            return true;
+/// Wait until the app answers HTTP on its port. A bare TCP connect is not
+/// enough on Docker Desktop: the port proxy accepts connections even when the
+/// process inside is dead. Also fail fast (with the log tail) if the
+/// container exits while we wait.
+fn wait_ready(plan: &AppPlan) -> Result<bool> {
+    for _ in 0..plan.wait_tries {
+        if container_state(plan.container)? != ContainerState::Running {
+            let logs = Command::new("docker")
+                .args(["logs", "--tail", "15", plan.container])
+                .output()
+                .map(|o| {
+                    let mut text = String::from_utf8_lossy(&o.stdout).to_string();
+                    text.push_str(&String::from_utf8_lossy(&o.stderr));
+                    text
+                })
+                .unwrap_or_default();
+            bail!(
+                "container '{}' exited during startup. Last log lines:
+{}",
+                plan.container,
+                logs.trim()
+            );
+        }
+        if http_probe(plan.wait_port) {
+            return Ok(true);
         }
         std::thread::sleep(Duration::from_millis(1500));
     }
-    false
+    Ok(false)
+}
+
+/// Minimal HTTP GET: ready only if the server sends back an HTTP response.
+fn http_probe(port: u16) -> bool {
+    use std::io::{Read, Write};
+    let addr = ([127, 0, 0, 1], port).into();
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_secs(2)) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+    if stream
+        .write_all(b"GET / HTTP/1.1
+Host: localhost
+Connection: close
+
+")
+        .is_err()
+    {
+        return false;
+    }
+    let mut buf = [0u8; 5];
+    match stream.read_exact(&mut buf) {
+        Ok(()) => &buf == b"HTTP/",
+        Err(_) => false,
+    }
+}
+
+fn container_exit_code(name: &str) -> Result<i64> {
+    let lines = docker_lines(&["inspect", "-f", "{{.State.ExitCode}}", name])?;
+    Ok(lines
+        .first()
+        .and_then(|l| l.parse().ok())
+        .unwrap_or(0))
 }
 
 fn open_browser(url: &str) {
