@@ -66,6 +66,11 @@ cli/                       Cargo workspace
         git.rs             vn git sync|status
         net.rs             vn net scan — RustScan-based open-port scan (native Rust)
         run.rs             vn run <name> — maps script names to scripts/** and executes
+        mcp.rs             vn mcp serve [--http] — MCP server entrypoint (see below)
+      mcp/                 MCP (Model Context Protocol) host: see "MCP host" below
+        mod.rs             Module list
+        approval.rs        ApprovalGate — the confirm-before-destructive-tool-call bridge
+        apps_toolset.rs     AppsToolset — the "Apps" toolset (list/open/stop apps)
 scripts/ubuntu22/*.sh      Linux task scripts
 scripts/win11/*.bat        Windows task scripts
 scripts/tools-cli/alpine/  In-container tools workflow
@@ -148,16 +153,22 @@ scripts install it with `cargo install rustscan`.
 it is compiled in automatically — no separate install like RustScan). Subcommands:
 
 - `vn ai status` — is the Ollama server reachable?
-- `vn ai models` — list installed model names (one per line; used by the TUI).
-- `vn ai pull <name>` — download a model (e.g. `llama3.2`).
+- `vn ai models [--tools-only]` — list installed model names (one per line; used by the
+  TUI). `--tools-only` checks each model's reported `capabilities` via `ollama show` and
+  skips ones without `"tools"` (see `model_supports_tools`) — the TUI's chat always
+  attaches tools (see below), so a model without that capability can't chat at all.
+- `vn ai pull <name>` — download a model (e.g. `llama3.2`, which is small and supports
+  tools).
 - `vn ai chat "<message>" [--model m] [--session s]` — send a message; context is kept
   per session via [ollama/session.rs](cli/crates/vn/src/ollama/session.rs) so turns
   build on each other across invocations.
 
 In the TUI's AI submenu (win11-ai / ubuntu22-ai): **Select Model** opens a dynamic menu
-listing installed models (the TUI shells out to `vn ai models` and builds rows from the
-output; the chosen model shows in the header and is passed as `--model`); **Download
-Model** and **Chat** arm the input box (see `InputPurpose`) so the next typed line is
+listing installed **tool-capable** models only (the TUI shells out to `vn ai models
+--tools-only` and builds rows from the output; the chosen model shows in the header and
+is passed as `--model`). If none are installed, the menu shows a placeholder recommending
+`vn ai pull llama3.2`. **Download Model** and **Chat** arm the input box (see
+`InputPurpose`) so the next typed line is
 routed to `vn ai pull` / `vn ai chat`. Output streams into the CLI Output panel and the
 session log file like any other command. The Ollama *server* itself still needs to be
 installed/running — that is what the `check-ollama` / `open-ollama` scripts handle.
@@ -226,6 +237,52 @@ only modified on an explicit rename. `open` rebuilds + recreates the container e
 Note on `.bat`: inside an `if (…) else (…)` block, any literal `(`/`)` in an `echo`
 must be escaped as `^(`/`^)` (or avoided) — an unescaped `)` closes the block early and
 cmd fails with "… was unexpected at this time."
+
+## MCP host
+
+vecnode is an MCP ([Model Context Protocol](https://modelcontextprotocol.io)) **host**: it
+exposes its own host-control functions as MCP tools, using the official
+[`rmcp`](https://crates.io/crates/rmcp) Rust SDK. v1 has one toolset, **Apps**
+([cli/crates/vn/src/mcp/apps_toolset.rs](cli/crates/vn/src/mcp/apps_toolset.rs)):
+`list_apps`, `open_app`, `stop_app` — thin wrappers around `commands::apps::{list, open_reported, stop_reported}`,
+so there is exactly one implementation whether the caller is an external MCP client or
+vecnode's own Ollama chat.
+
+**Reaching it:**
+- `vn mcp serve` — stdio transport, for MCP clients that spawn their own subprocess
+  (Claude Desktop/Code's usual local-server config). Runs headless: no TUI is attached.
+- `vn mcp serve --http [--port 7332]` — loopback-only Streamable HTTP transport, same
+  headless behavior.
+- **The TUI's embedded server**: on startup, `tui/app.rs` spawns the same HTTP transport
+  on its own thread (`spawn_mcp_server`), bound to `127.0.0.1:7332` by default. The "MCP
+  Server" panel shows its status and tool count. This is the one that gets a real approval
+  prompt (see below), since the TUI is attached.
+
+**Approval gate** ([cli/crates/vn/src/mcp/approval.rs](cli/crates/vn/src/mcp/approval.rs)):
+`stop_app` is destructive, so it calls `ApprovalGate::request()` before acting. With the
+TUI attached, this arms the input box with the same "type yes to confirm" pattern used for
+destructive menu items (`InputPurpose::ApproveMcp`) and blocks the tool call until you
+answer. Headless (`vn mcp serve`), `ApprovalGate::headless()` auto-denies every request —
+fail-closed, since there's no console free to prompt on (stdio *is* the protocol channel).
+`list_apps`/`open_app` aren't gated; they run immediately, matching the TUI's own
+"vn app open" menu items.
+
+**Ollama chat integration** (`spawn_chat_worker` in
+[tui/app.rs](cli/crates/vn/src/tui/app.rs)): every chat turn attaches `ToolInfo` entries
+built dynamically from `AppsToolset::list_tools()` (the same JSON-schema metadata an MCP
+client sees via `tools/list` — `ollama-rs`'s `ToolInfo`/`ToolFunctionInfo` are plain public
+structs, so no compile-time-known tool types are needed). If the reply has `tool_calls`,
+each one is dispatched via `AppsToolset::call_by_name` (in-process, no HTTP/stdio
+round-trip — `stop_app` still goes through the same `ApprovalGate`), logged into the CLI
+Output panel as `[MCP] Calling ...` / `[MCP] Result: ...`, and fed back as a
+`ChatMessage::tool(...)` — capped at `MAX_TOOL_ROUNDS` (4) to bound a confused model's
+tool-calling loop.
+
+**To add a tool:** add a `#[tool(description = "...")]` method (with a params struct
+deriving `serde::Deserialize` + `schemars::JsonSchema` if it takes arguments) to
+`AppsToolset` (or a new toolset struct, composed alongside it in `commands/mcp.rs` and
+`tui/app.rs`'s `spawn_mcp_server`), and add a matching arm in `call_by_name` so the Ollama
+integration can dispatch to it by name.
 
 ## Conventions
 

@@ -9,9 +9,12 @@
 use crate::config::LoadedConfig;
 use anyhow::{bail, Context, Result};
 use std::fs;
+use std::io::{BufRead, BufReader};
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::mpsc;
+use std::thread;
 use std::time::Duration;
 
 pub const APP_NAMES: &[&str] = &[
@@ -203,13 +206,31 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
     Ok(plan)
 }
 
+/// The default CLI/TUI reporter: prints each progress line to stdout exactly
+/// as `open`/`stop` always have. MCP tool wrappers pass a different reporter
+/// (capturing lines into the tool-call result, or discarding them) instead of
+/// `println!`-ing straight to the process's real stdout, which would corrupt
+/// an MCP stdio transport's JSON-RPC stream.
+pub fn println_reporter(line: &str) {
+    println!("{line}");
+}
+
 pub fn open(name: &str, loaded: &LoadedConfig, no_open: bool) -> Result<()> {
+    open_reported(name, loaded, no_open, &mut println_reporter)
+}
+
+pub fn open_reported(
+    name: &str,
+    loaded: &LoadedConfig,
+    no_open: bool,
+    report: &mut dyn FnMut(&str),
+) -> Result<()> {
     let plan = plan_for(name, loaded)?;
-    check_docker_ready()?;
+    check_docker_ready(report)?;
 
     // Per-app preparation.
     if name == "silverbullet" {
-        backup_silverbullet_space()?;
+        backup_silverbullet_space(report)?;
     }
     for (host_path, _) in &plan.mounts {
         fs::create_dir_all(host_path)
@@ -217,94 +238,108 @@ pub fn open(name: &str, loaded: &LoadedConfig, no_open: bool) -> Result<()> {
     }
 
     if let Some((context, dockerfile)) = &plan.build {
-        println!("[INFO] Building image '{}'...", plan.image);
+        report(&format!("[INFO] Building image '{}'...", plan.image));
         let mut args: Vec<String> = vec!["build".into(), "-t".into(), plan.image.clone()];
         if let Some(df) = dockerfile {
             args.push("-f".into());
             args.push(df.display().to_string());
         }
         args.push(context.display().to_string());
-        run_docker_streaming(&args)?;
-        println!("[OK] Image built.");
+        run_docker_streaming(&args, report)?;
+        report("[OK] Image built.");
     }
 
     match plan.lifecycle {
         Lifecycle::Recreate { rm_on_exit } => {
             let _ = docker_quiet(&["rm", "-f", plan.container]);
             run_container(&plan, rm_on_exit)?;
-            println!("[OK] Container started: {}", plan.container);
+            report(&format!("[OK] Container started: {}", plan.container));
         }
         Lifecycle::Reuse => {
             let state = container_state(plan.container)?;
             if state == ContainerState::Running {
-                println!("[OK] Container '{}' is already running.", plan.container);
+                report(&format!(
+                    "[OK] Container '{}' is already running.",
+                    plan.container
+                ));
             } else if state == ContainerState::Stopped && container_exit_code(plan.container)? == 0
             {
-                println!("[INFO] Starting existing container '{}'...", plan.container);
+                report(&format!(
+                    "[INFO] Starting existing container '{}'...",
+                    plan.container
+                ));
                 docker_quiet(&["start", plan.container])
                     .with_context(|| format!("failed to start container {}", plan.container))?;
             } else {
                 if state == ContainerState::Stopped {
-                    println!(
+                    report(&format!(
                         "[INFO] Container '{}' previously exited with an error; recreating it...",
                         plan.container
-                    );
+                    ));
                     let _ = docker_quiet(&["rm", "-f", plan.container]);
                 }
-                println!(
+                report(&format!(
                     "[INFO] Running image '{}'. First run downloads it; this can take a while...",
                     plan.image
-                );
+                ));
                 run_container(&plan, false)?;
-                println!("[OK] Container started: {}", plan.container);
+                report(&format!("[OK] Container started: {}", plan.container));
             }
         }
     }
 
-    println!("[INFO] Waiting for {} ...", plan.open_url);
+    report(&format!("[INFO] Waiting for {} ...", plan.open_url));
     if wait_ready(&plan)? {
-        println!("[OK] {} is ready.", name);
+        report(&format!("[OK] {} is ready.", name));
     } else {
-        println!(
+        report(&format!(
             "[WARNING] {} did not respond yet; opening the browser anyway.",
             name
-        );
+        ));
     }
 
     if no_open {
-        println!("[INFO] --no-open set; not launching a browser.");
+        report("[INFO] --no-open set; not launching a browser.");
     } else {
-        open_browser(&plan.open_url);
+        open_browser(&plan.open_url, report);
     }
 
-    println!();
-    println!("[INFO] Open:  {}", plan.open_url);
+    report("");
+    report(&format!("[INFO] Open:  {}", plan.open_url));
     for line in &plan.info {
-        println!("[INFO] {}", line);
+        report(&format!("[INFO] {}", line));
     }
-    println!(
+    report(&format!(
         "[INFO] Stop:  vn app stop {}   (or: docker stop {})",
         name, plan.container
-    );
-    println!("[INFO] Logs:  docker logs -f {}", plan.container);
+    ));
+    report(&format!("[INFO] Logs:  docker logs -f {}", plan.container));
     Ok(())
 }
 
 pub fn stop(name: &str, loaded: &LoadedConfig) -> Result<()> {
+    stop_reported(name, loaded, &mut println_reporter)
+}
+
+pub fn stop_reported(
+    name: &str,
+    loaded: &LoadedConfig,
+    report: &mut dyn FnMut(&str),
+) -> Result<()> {
     let plan = plan_for(name, loaded)?;
     check_docker_available()?;
 
     if container_state(plan.container)? == ContainerState::Absent {
-        println!(
+        report(&format!(
             "[INFO] No '{}' container exists. Nothing to stop.",
             plan.container
-        );
+        ));
         return Ok(());
     }
-    println!("[INFO] Stopping '{}'...", plan.container);
+    report(&format!("[INFO] Stopping '{}'...", plan.container));
     docker_quiet(&["stop", plan.container])
         .with_context(|| format!("failed to stop container {}", plan.container))?;
-    println!("[OK] Stopped '{}'.", plan.container);
+    report(&format!("[OK] Stopped '{}'.", plan.container));
     Ok(())
 }
 
@@ -321,7 +356,7 @@ pub fn list() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 pub fn docker_check() -> Result<()> {
-    check_docker_ready()?;
+    check_docker_ready(&mut println_reporter)?;
     let status = Command::new("docker")
         .arg("ps")
         .stdin(Stdio::null())
@@ -340,7 +375,7 @@ pub fn docker_check() -> Result<()> {
 }
 
 pub fn docker_stop_all() -> Result<()> {
-    check_docker_ready()?;
+    check_docker_ready(&mut println_reporter)?;
     let running = docker_lines(&["ps", "-q"])?;
     if running.is_empty() {
         println!("[INFO] No running containers to stop.");
@@ -355,7 +390,7 @@ pub fn docker_stop_all() -> Result<()> {
 }
 
 pub fn docker_remove_containers() -> Result<()> {
-    check_docker_ready()?;
+    check_docker_ready(&mut println_reporter)?;
     docker_stop_all()?;
     let all = docker_lines(&["ps", "-aq"])?;
     if all.is_empty() {
@@ -371,7 +406,7 @@ pub fn docker_remove_containers() -> Result<()> {
 }
 
 pub fn docker_remove_images() -> Result<()> {
-    check_docker_ready()?;
+    check_docker_ready(&mut println_reporter)?;
     let images = docker_lines(&["images", "-aq"])?;
     if images.is_empty() {
         println!("[INFO] No images to remove.");
@@ -466,7 +501,7 @@ fn check_docker_available() -> Result<()> {
     Ok(())
 }
 
-fn check_docker_ready() -> Result<()> {
+fn check_docker_ready(report: &mut dyn FnMut(&str)) -> Result<()> {
     check_docker_available()?;
     let ok = Command::new("docker")
         .arg("info")
@@ -479,7 +514,7 @@ fn check_docker_ready() -> Result<()> {
     if !ok {
         bail!("Docker daemon is not running. Start Docker and try again.");
     }
-    println!("[OK] Docker daemon is running.");
+    report("[OK] Docker daemon is running.");
     Ok(())
 }
 
@@ -513,14 +548,53 @@ fn docker_lines(args: &[&str]) -> Result<Vec<String>> {
         .collect())
 }
 
-fn run_docker_streaming(args: &[String]) -> Result<()> {
-    let status = Command::new("docker")
+/// Run `docker <args>` (used only for `docker build`), streaming its output
+/// line-by-line through `report` as it's produced. Piped (not inherited) so
+/// the build's own stdout/stderr never touch the process's real stdio -
+/// harmless for the plain CLI (the reporter still `println!`s each line as it
+/// arrives, so it looks the same as inheriting), but required for MCP: an
+/// inherited stdout here would corrupt an MCP stdio transport's JSON-RPC
+/// stream mid-build.
+fn run_docker_streaming(args: &[String], report: &mut dyn FnMut(&str)) -> Result<()> {
+    let mut child = Command::new("docker")
         .args(args)
         .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .with_context(|| format!("failed to run: docker {}", args.join(" ")))?;
+
+    let (tx, rx) = mpsc::channel::<String>();
+
+    if let Some(stdout) = child.stdout.take() {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    if let Some(stderr) = child.stderr.take() {
+        let tx = tx.clone();
+        thread::spawn(move || {
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                if tx.send(line).is_err() {
+                    break;
+                }
+            }
+        });
+    }
+    drop(tx);
+
+    for line in rx {
+        report(&line);
+    }
+
+    let status = child
+        .wait()
+        .with_context(|| format!("failed to wait on: docker {}", args.join(" ")))?;
     if !status.success() {
         bail!("docker {} exited with status: {status}", args[0]);
     }
@@ -590,7 +664,7 @@ fn container_exit_code(name: &str) -> Result<i64> {
     Ok(lines.first().and_then(|l| l.parse().ok()).unwrap_or(0))
 }
 
-fn open_browser(url: &str) {
+fn open_browser(url: &str, report: &mut dyn FnMut(&str)) {
     #[cfg(target_os = "windows")]
     {
         let chrome_candidates = [
@@ -618,7 +692,7 @@ fn open_browser(url: &str) {
         ];
         for candidate in chrome_candidates.into_iter().flatten() {
             if candidate.exists() {
-                println!("[INFO] Opening Chrome at {url}");
+                report(&format!("[INFO] Opening Chrome at {url}"));
                 let _ = Command::new(candidate)
                     .arg(url)
                     .stdin(Stdio::null())
@@ -628,7 +702,9 @@ fn open_browser(url: &str) {
                 return;
             }
         }
-        println!("[INFO] Chrome not found; opening default browser at {url}");
+        report(&format!(
+            "[INFO] Chrome not found; opening default browser at {url}"
+        ));
         let _ = Command::new("cmd")
             .args(["/C", "start", "", url])
             .stdin(Stdio::null())
@@ -652,7 +728,7 @@ fn open_browser(url: &str) {
                 .map(|s| s.success())
                 .unwrap_or(false)
             {
-                println!("[INFO] Opening Chrome at {url}");
+                report(&format!("[INFO] Opening Chrome at {url}"));
                 let _ = Command::new(browser)
                     .arg(url)
                     .stdout(Stdio::null())
@@ -661,7 +737,9 @@ fn open_browser(url: &str) {
                 return;
             }
         }
-        println!("[INFO] Chrome not found; opening default browser at {url}");
+        report(&format!(
+            "[INFO] Chrome not found; opening default browser at {url}"
+        ));
         let _ = Command::new("xdg-open")
             .arg(url)
             .stdout(Stdio::null())
@@ -670,31 +748,34 @@ fn open_browser(url: &str) {
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
-        println!("[INFO] Open manually: {url}");
+        report(&format!("[INFO] Open manually: {url}"));
     }
 }
 
 /// Back up ~/silverbullet-space to Desktop/silverbullet-space-backup-<ts>
 /// before recreating the container (matches the old win11 script; the old
 /// ubuntu script asked interactively — now both platforms back up always).
-fn backup_silverbullet_space() -> Result<()> {
+fn backup_silverbullet_space(report: &mut dyn FnMut(&str)) -> Result<()> {
     let home = dirs::home_dir().context("could not determine home directory")?;
     let space = home.join("silverbullet-space");
     if !space.exists() {
-        println!("[INFO] Space folder does not exist, creating it.");
+        report("[INFO] Space folder does not exist, creating it.");
         fs::create_dir_all(&space)?;
         return Ok(());
     }
     let desktop = home.join("Desktop");
     if !desktop.exists() {
-        println!("[WARNING] No Desktop folder; skipping space backup.");
+        report("[WARNING] No Desktop folder; skipping space backup.");
         return Ok(());
     }
     let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
     let target = desktop.join(format!("silverbullet-space-backup-{ts}"));
-    println!("[INFO] Backing up space folder to: {}", target.display());
+    report(&format!(
+        "[INFO] Backing up space folder to: {}",
+        target.display()
+    ));
     copy_dir_recursive(&space, &target)?;
-    println!("[OK] Backup completed: {}", target.display());
+    report(&format!("[OK] Backup completed: {}", target.display()));
     Ok(())
 }
 
