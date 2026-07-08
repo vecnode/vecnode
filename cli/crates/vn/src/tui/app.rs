@@ -29,7 +29,9 @@ use std::io::Read;
 use std::io::Write;
 use std::io::{self, Stdout};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc::UnboundedReceiver, oneshot};
@@ -186,6 +188,12 @@ struct AppState {
     /// (`InputPurpose::ApproveMcp`), answered by `send_input_line`.
     active_mcp_respond: Option<oneshot::Sender<bool>>,
     mcp_approval_rx: UnboundedReceiver<PendingApproval>,
+    /// `docker ps` runs on a background thread (see `refresh_docker_panel`)
+    /// so a slow/hung Docker daemon can never stall the render loop; results
+    /// come back here and are applied by `pump_docker_panel`.
+    docker_panel_rx: Receiver<DockerPanelData>,
+    docker_panel_tx: Sender<DockerPanelData>,
+    docker_refresh_in_flight: Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -196,6 +204,7 @@ impl AppState {
         let (mcp_approval, mcp_approval_rx) = ApprovalGate::new();
         spawn_mcp_server(loaded.clone(), mcp_approval.clone(), MCP_PORT, tx.clone());
         let chat_tx = spawn_chat_worker(loaded, mcp_approval, tx.clone());
+        let (docker_panel_tx, docker_panel_rx) = mpsc::channel::<DockerPanelData>();
 
         let log_file = open_session_log(&repo_root);
 
@@ -230,6 +239,9 @@ impl AppState {
             mcp_pending: VecDeque::new(),
             active_mcp_respond: None,
             mcp_approval_rx,
+            docker_panel_rx,
+            docker_panel_tx,
+            docker_refresh_in_flight: Arc::new(AtomicBool::new(false)),
         };
 
         app.refresh_ui();
@@ -278,45 +290,28 @@ impl AppState {
         self.refresh_docker_panel();
     }
 
+    /// Kick off a `docker ps` refresh on a background thread; never blocks
+    /// the render loop, unlike calling `docker` directly here would (a slow
+    /// or hung Docker daemon must not stall the whole TUI). Results are
+    /// applied later by `pump_docker_panel`. A no-op if a refresh from
+    /// startup, the periodic timer, or a manual `r` press is already running.
     fn refresh_docker_panel(&mut self) {
-        // One line per running container: ports, image and name.
-        let out = Command::new("docker")
-            .args(["ps", "--format", "{{.Ports}}\t{{.Image}}\t{{.Names}}"])
-            .output();
-
-        let out = match out {
-            Ok(out) if out.status.success() => out,
-            _ => {
-                self.docker_panel.available = false;
-                self.docker_panel.rows.clear();
-                return;
-            }
-        };
-
-        let text = String::from_utf8_lossy(&out.stdout);
-        let mut rows: Vec<(String, String, String)> = Vec::new();
-        for line in text.lines() {
-            let line = line.trim_end();
-            if line.is_empty() {
-                continue;
-            }
-            let mut parts = line.splitn(3, '\t');
-            let ports_raw = parts.next().unwrap_or("");
-            let image = parts.next().unwrap_or("").to_string();
-            let name = parts.next().unwrap_or("").to_string();
-
-            let host_ports = extract_host_ports(ports_raw);
-            let port = if host_ports.is_empty() {
-                "-".to_string()
-            } else {
-                host_ports.join(",")
-            };
-            rows.push((port, image, name));
+        if self.docker_refresh_in_flight.swap(true, Ordering::SeqCst) {
+            return;
         }
-        rows.sort_by(|a, b| a.2.cmp(&b.2));
+        let tx = self.docker_panel_tx.clone();
+        let in_flight = self.docker_refresh_in_flight.clone();
+        thread::spawn(move || {
+            let _ = tx.send(fetch_docker_panel_data());
+            in_flight.store(false, Ordering::SeqCst);
+        });
+    }
 
-        self.docker_panel.available = true;
-        self.docker_panel.rows = rows;
+    /// Apply the latest background `docker ps` result, if one has arrived.
+    fn pump_docker_panel(&mut self) {
+        while let Ok(data) = self.docker_panel_rx.try_recv() {
+            self.docker_panel = data;
+        }
     }
 
     fn max_output_scroll(&self) -> u16 {
@@ -1231,6 +1226,32 @@ fn tagged_line_color(text: &str, default: Color) -> Color {
     }
 }
 
+/// Split `text` on `**bold**` markdown-style markers into styled spans, so
+/// AI replies (which often use `**word**` for emphasis) actually render
+/// bold instead of showing the literal asterisks. Falls back to one plain
+/// span for the whole line if the `**` markers aren't in balanced pairs,
+/// rather than guessing - a line with a stray `**` (e.g. inside code or
+/// just unbalanced markdown) is shown as-is.
+fn spans_with_bold(text: &str, base: Style) -> Vec<Span<'static>> {
+    let parts: Vec<&str> = text.split("**").collect();
+    if parts.len() < 3 || parts.len().is_multiple_of(2) {
+        return vec![Span::styled(text.to_string(), base)];
+    }
+    parts
+        .into_iter()
+        .enumerate()
+        .filter(|(_, part)| !part.is_empty())
+        .map(|(i, part)| {
+            let style = if i % 2 == 1 {
+                base.add_modifier(Modifier::BOLD)
+            } else {
+                base
+            };
+            Span::styled(part.to_string(), style)
+        })
+        .collect()
+}
+
 fn split_to_entries(chunk: String, is_stderr: bool) -> Vec<String> {
     let normalized = chunk.replace("\r\n", "\n").replace('\r', "\n");
     let mut out = Vec::new();
@@ -1279,6 +1300,51 @@ fn is_non_error_stderr_line(line: &str) -> bool {
         || lower.starts_with("load metadata")
         || lower.starts_with("load .dockerignore")
         || lower.starts_with("build context")
+}
+
+/// Blocking `docker ps` call - runs on a background thread (see
+/// `AppState::refresh_docker_panel`), never on the render loop.
+fn fetch_docker_panel_data() -> DockerPanelData {
+    let out = Command::new("docker")
+        .args(["ps", "--format", "{{.Ports}}\t{{.Image}}\t{{.Names}}"])
+        .output();
+
+    let out = match out {
+        Ok(out) if out.status.success() => out,
+        _ => {
+            return DockerPanelData {
+                available: false,
+                rows: Vec::new(),
+            }
+        }
+    };
+
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut rows: Vec<(String, String, String)> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim_end();
+        if line.is_empty() {
+            continue;
+        }
+        let mut parts = line.splitn(3, '\t');
+        let ports_raw = parts.next().unwrap_or("");
+        let image = parts.next().unwrap_or("").to_string();
+        let name = parts.next().unwrap_or("").to_string();
+
+        let host_ports = extract_host_ports(ports_raw);
+        let port = if host_ports.is_empty() {
+            "-".to_string()
+        } else {
+            host_ports.join(",")
+        };
+        rows.push((port, image, name));
+    }
+    rows.sort_by(|a, b| a.2.cmp(&b.2));
+
+    DockerPanelData {
+        available: true,
+        rows,
+    }
 }
 
 fn extract_host_ports(line: &str) -> Vec<String> {
@@ -1440,24 +1506,12 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["app", "open", "stirling-pdf"]),
             },
             CommandItem {
-                label: "vn app stop stirling-pdf",
-                action: Action::Execute(vec!["app", "stop", "stirling-pdf"]),
-            },
-            CommandItem {
                 label: "vn app open library-portal",
                 action: Action::Execute(vec!["app", "open", "library-portal"]),
             },
             CommandItem {
-                label: "vn app stop library-portal",
-                action: Action::Execute(vec!["app", "stop", "library-portal"]),
-            },
-            CommandItem {
                 label: "vn app open media-downloader",
                 action: Action::Execute(vec!["app", "open", "media-downloader"]),
-            },
-            CommandItem {
-                label: "vn app stop media-downloader",
-                action: Action::Execute(vec!["app", "stop", "media-downloader"]),
             },
             CommandItem {
                 label: "vn app open doc-processor",
@@ -1596,24 +1650,12 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["app", "open", "stirling-pdf"]),
             },
             CommandItem {
-                label: "vn app stop stirling-pdf",
-                action: Action::Execute(vec!["app", "stop", "stirling-pdf"]),
-            },
-            CommandItem {
                 label: "vn app open library-portal",
                 action: Action::Execute(vec!["app", "open", "library-portal"]),
             },
             CommandItem {
-                label: "vn app stop library-portal",
-                action: Action::Execute(vec!["app", "stop", "library-portal"]),
-            },
-            CommandItem {
                 label: "vn app open media-downloader",
                 action: Action::Execute(vec!["app", "open", "media-downloader"]),
-            },
-            CommandItem {
-                label: "vn app stop media-downloader",
-                action: Action::Execute(vec!["app", "stop", "media-downloader"]),
             },
             CommandItem {
                 label: "vn app open doc-processor",
@@ -1732,6 +1774,7 @@ fn event_loop(
     loop {
         app.pump_process();
         app.pump_mcp_approvals();
+        app.pump_docker_panel();
 
         if app.last_docker_refresh.elapsed() >= DOCKER_REFRESH_INTERVAL {
             app.refresh_docker_panel();
@@ -2031,15 +2074,16 @@ fn event_loop(
                         // replies) uses the same dark-grey tone as dim
                         // chrome (DIM) rather than stark white - softer for
                         // long-form reading. [INFO] keeps its own MUTED tone
-                        // unchanged below.
-                        Line::from(Span::styled(
-                            text.clone(),
+                        // unchanged below. `**bold**` markers (common in AI
+                        // replies) render bold instead of literal asterisks.
+                        Line::from(spans_with_bold(
+                            text,
                             Style::default().fg(tagged_line_color(text, DIM)),
                         ))
                     } else {
                         match entry {
-                            LogEntry::Info(text) => Line::from(Span::styled(
-                                text.clone(),
+                            LogEntry::Info(text) => Line::from(spans_with_bold(
+                                text,
                                 Style::default().fg(tagged_line_color(text, MUTED)),
                             )),
                             _ => Line::from(Span::raw(String::new())),
@@ -2147,5 +2191,42 @@ mod tests {
         assert!(names.contains(&"list_apps"));
         assert!(names.contains(&"open_app"));
         assert!(names.contains(&"stop_app"));
+    }
+
+    #[test]
+    fn spans_with_bold_splits_balanced_markers() {
+        let spans = spans_with_bold("hello **world** foo", Style::default());
+        let rendered: Vec<(String, bool)> = spans
+            .iter()
+            .map(|s| {
+                (
+                    s.content.to_string(),
+                    s.style.add_modifier.contains(Modifier::BOLD),
+                )
+            })
+            .collect();
+        assert_eq!(
+            rendered,
+            vec![
+                ("hello ".to_string(), false),
+                ("world".to_string(), true),
+                (" foo".to_string(), false),
+            ]
+        );
+    }
+
+    #[test]
+    fn spans_with_bold_leaves_unbalanced_markers_plain() {
+        let spans = spans_with_bold("hello **world", Style::default());
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content.to_string(), "hello **world");
+        assert!(!spans[0].style.add_modifier.contains(Modifier::BOLD));
+    }
+
+    #[test]
+    fn spans_with_bold_leaves_plain_text_untouched() {
+        let spans = spans_with_bold("no markers here", Style::default());
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content.to_string(), "no markers here");
     }
 }

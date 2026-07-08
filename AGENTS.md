@@ -124,7 +124,17 @@ Keybindings beyond Up/Down/Enter: `x` kills every running background process wit
 quitting the TUI; `e` scrolls the CLI Output panel to the previous error/stderr line;
 `Esc` steps back one menu level (or cancels the input box), only quitting from the root
 Dashboard — `q` still quits immediately from anywhere in the Dashboard. Mouse wheel
-scrolls CLI Output; left-clicking a dashboard row selects and runs it.
+scrolls CLI Output; left-clicking a dashboard row selects and runs it. `**bold**` markers
+in CLI Output text (common in AI replies) render bold via `spans_with_bold`.
+
+**Nothing that can block should run on the render loop.** Spawned commands, the Ollama
+chat worker, and the embedded MCP server each own a dedicated OS thread (or tokio runtime)
+and talk back to `event_loop` only through channels drained non-blockingly
+(`pump_process`/`pump_mcp_approvals`/`pump_docker_panel`); `docker ps` for the Docker panel
+follows the same pattern (`refresh_docker_panel` spawns a thread, `pump_docker_panel`
+applies the result when it arrives) so a slow/hung Docker daemon can't stall the whole
+TUI. If you add a new background action, follow this pattern rather than calling a
+blocking operation directly from `event_loop`.
 
 `commands/run.rs` `map_script()` is a match from a script name to a relative path
 under `scripts/`. To add a script-backed task: drop the script in the right OS folder,
