@@ -365,15 +365,35 @@ responsive.
 done something ("restarted the container!") in its final reply without actually calling any
 tool that turn - `spawn_chat_worker` tracks whether at least one tool call was dispatched
 during the turn and, if not, appends `MCP_NONE_TAG` (`[MCP: NONE]`) on its own line *after*
-the reply (`"{reply}\n{MCP_NONE_TAG}"`) before it's logged/shown (the *unmodified* reply is
-still what's saved into the session and fed back to the model as history - the tag is
-display/log-only). Deliberately not `[MCP]` alone: that would collide with the existing
-`[MCP] Calling .../[MCP] Result: ...` activity-line prefixes when grepping a log for one or
-the other. `pump_process`'s `split_to_entries` turns that `\n` into its own log line, and the
-render loop (`spans_for_stdout_line` in [tui/app.rs](cli/crates/vn/src/tui/app.rs)) renders a
-line that's exactly the tag entirely in the same Magenta as `[MCP]` activity lines, rather
-than the reply's normal DIM tone - on its own line and separately colored so it reads as a
-distinct marker, not part of the message.
+the reply (`"{reply}\n{MCP_NONE_TAG}"`) *before* it's saved into the session (so future turns'
+history, and `default_system_prompt()`'s instructions, can see which of the model's own past
+replies weren't grounded) and shown. Deliberately not `[MCP]` alone: that would collide with
+the existing `[MCP] Calling .../[MCP] Result: ...` activity-line prefixes when grepping a log
+for one or the other. `pump_process`'s `split_to_entries` turns that `\n` into its own log
+line, and the render loop (`spans_for_stdout_line` in
+[tui/app.rs](cli/crates/vn/src/tui/app.rs)) renders a line that's exactly the tag entirely in
+the same Magenta as `[MCP]` activity lines, rather than the reply's normal DIM tone - on its
+own line and separately colored so it reads as a distinct marker, not part of the message.
+
+**Session reset on model switch:** the persisted "tui" session (one file, loaded once when
+`spawn_chat_worker` starts) used to survive switching the active model in the "Select Model"
+menu - a newly-selected model would inherit whatever the *previous* model said, including
+any fabricated replies, and tends to treat that prior turn as established fact rather than
+independently re-checking it (observed directly: two different models produced byte-identical
+fabricated container IDs because the second one was conditioning on the first one's
+fabrication in shared history). `activate_selected` now sends `ChatRequest::ResetSession`
+through `chat_tx` whenever the newly-picked model differs from the previously-selected one
+*within this run* (not on the first selection after startup, which would otherwise needlessly
+discard a legitimate resumed conversation with the same model from a previous run) -
+`spawn_chat_worker` clears `session.messages` and persists the empty session.
+
+**`default_system_prompt()`** ([config.rs](cli/crates/vn/src/config.rs)) explicitly instructs
+the model to call a tool for any state question rather than guess, to re-call rather than
+reuse a previous answer since state can change between turns, and to treat a
+`[MCP: NONE]`-tagged prior reply as unverified. Only applied to a *freshly generated*
+`config.toml` - `load_or_init` never overwrites an existing one, so an existing install needs
+its `prompts.system` value hand-edited (or the file deleted to regenerate) to pick this up;
+the config lives at `dirs::config_dir()/vn/config.toml` (`default_config_path`).
 
 **To add a tool:** add a `#[tool(description = "...")]` method (with a params struct
 deriving `serde::Deserialize` + `schemars::JsonSchema` if it takes arguments) to an existing

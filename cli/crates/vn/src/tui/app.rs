@@ -112,10 +112,20 @@ enum ProcEvent {
     McpActivity(String),
 }
 
-/// One turn sent to the persistent chat worker thread.
-struct ChatRequest {
-    model: Option<String>,
-    message: String,
+/// Sent to the persistent chat worker thread.
+enum ChatRequest {
+    /// One chat turn.
+    Turn {
+        model: Option<String>,
+        message: String,
+    },
+    /// Drop the in-memory/on-disk "tui" session's message history. Sent when
+    /// the active model changes (see `activate_selected`) - without this, a
+    /// newly-selected model inherits whatever the *previous* model said in
+    /// this same conversation, including any fabricated ("hallucinated")
+    /// replies, and tends to treat that prior turn as established fact
+    /// rather than independently re-checking it.
+    ResetSession,
 }
 
 enum LogEntry {
@@ -536,12 +546,31 @@ impl AppState {
                 return;
             }
             let name = self.model_items[self.selected].clone();
+            // Only a genuine switch mid-session should reset history - not
+            // the first selection in a fresh TUI run, which would otherwise
+            // needlessly discard a legitimate resumed conversation with the
+            // same model from a previous run (there's no prior in-run
+            // selection to compare against yet, so `selected_model` is still
+            // `None` at that point).
+            let switched = matches!(&self.selected_model, Some(prev) if prev != &name);
             self.selected_model = Some(name.clone());
             self.push_log(LogEntry::Command(format!("select model: {}", name)));
             self.push_log(LogEntry::Info(format!(
                 "[INFO] Active model set to '{}'.",
                 name
             )));
+            // A different model shouldn't inherit the previous model's chat
+            // history - it has no way to know which of those prior
+            // "assistant" turns were grounded in a real tool call versus
+            // fabricated, and tends to treat them as established fact rather
+            // than re-checking. No-op if the same model was reselected.
+            if switched && self.chat_tx.send(ChatRequest::ResetSession).is_ok() {
+                self.push_log(LogEntry::Info(
+                    "[INFO] Started a new chat session (previous conversation history is not \
+                     carried over to a different model)."
+                        .to_string(),
+                ));
+            }
             self.set_menu(back);
             self.trim_logs();
             return;
@@ -762,7 +791,7 @@ impl AppState {
             InputPurpose::Chat => {
                 let model = self.selected_model.clone();
                 self.push_log(LogEntry::Command(format!("You: {}", text)));
-                let request = ChatRequest {
+                let request = ChatRequest::Turn {
                     model,
                     message: text,
                 };
@@ -1160,7 +1189,19 @@ fn spawn_chat_worker(
         };
 
         while let Ok(req) = req_rx.recv() {
-            let model = req.model.unwrap_or_else(|| default_model.clone());
+            let (model, req_message) = match req {
+                ChatRequest::ResetSession => {
+                    session.messages.clear();
+                    if let Err(err) = session.save(&path) {
+                        let _ = tx.send(ProcEvent::McpActivity(format!(
+                            "[INFO] Failed to persist the cleared chat session: {err:#}"
+                        )));
+                    }
+                    continue;
+                }
+                ChatRequest::Turn { model, message } => (model, message),
+            };
+            let model = model.unwrap_or_else(|| default_model.clone());
 
             let mut messages: Vec<ChatMessage> = Vec::new();
             if let Some(system) = &system_prompt {
@@ -1174,7 +1215,7 @@ fn spawn_chat_worker(
                     _ => {}
                 }
             }
-            messages.push(ChatMessage::user(req.message.clone()));
+            messages.push(ChatMessage::user(req_message.clone()));
 
             // Ground truth for whether this reply is backed by an actual tool
             // call, or is just the model talking - a small local model will
@@ -1239,14 +1280,6 @@ fn spawn_chat_worker(
 
             match result {
                 Ok(reply) => {
-                    session.append_user(req.message);
-                    session.append_assistant(reply.clone());
-                    if let Err(err) = session.save(&path) {
-                        let _ = tx.send(ProcEvent::ChatReply(Err(format!(
-                            "reply received but failed to save session: {err}"
-                        ))));
-                        continue;
-                    }
                     // Tag every reply this turn didn't back with a tool call -
                     // distinct from the existing "[MCP] Calling .../[MCP]
                     // Result: ..." activity lines (note the missing `]` before
@@ -1259,11 +1292,24 @@ fn spawn_chat_worker(
                     // appended inline, so it reads as a distinct marker, not
                     // part of the message - `split_to_entries` (called from
                     // `pump_process`) turns the `\n` into its own log line.
+                    // Tagged *before* it's saved to the session, not just
+                    // displayed: an untagged fabricated reply saved to
+                    // history reads as established fact to whichever model
+                    // sees it in a later turn (the system prompt tells it to
+                    // treat a tagged prior reply as unverified instead).
                     let reply = if tool_called {
                         reply
                     } else {
                         format!("{reply}\n{MCP_NONE_TAG}")
                     };
+                    session.append_user(req_message);
+                    session.append_assistant(reply.clone());
+                    if let Err(err) = session.save(&path) {
+                        let _ = tx.send(ProcEvent::ChatReply(Err(format!(
+                            "reply received but failed to save session: {err}"
+                        ))));
+                        continue;
+                    }
                     let _ = tx.send(ProcEvent::ChatReply(Ok(format!("{}: {}", model, reply))));
                 }
                 Err(err) => {

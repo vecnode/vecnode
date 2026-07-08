@@ -49,7 +49,7 @@ impl Default for AppConfig {
                 dir: sessions_dir.to_string_lossy().to_string(),
             },
             prompts: PromptConfig {
-                system: Some("You are a local offline systems assistant for vecnode.".to_string()),
+                system: Some(default_system_prompt()),
             },
         }
     }
@@ -98,6 +98,27 @@ pub fn default_config_path() -> PathBuf {
 fn default_sessions_dir() -> PathBuf {
     let base = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     base.join("vn").join("sessions")
+}
+
+/// Only applied to a *freshly generated* `config.toml` (`load_or_init` never
+/// overwrites an existing one) - editing this doesn't change what an
+/// existing install already has saved. Written to steer small/local models
+/// away from the two failure modes actually observed in the TUI chat: (1)
+/// answering a state question (what's running, what containers exist) from
+/// memory or a plausible guess instead of calling the tool that would give a
+/// real answer, and (2) treating a `[MCP: NONE]`-tagged prior reply in this
+/// same conversation as established fact just because it's in the history.
+fn default_system_prompt() -> String {
+    "You are a local offline systems assistant for vecnode. For any question about current \
+     state - which apps or containers exist, whether one is running, what processes are on \
+     this host, disk usage, log contents - call the matching tool and answer from its result. \
+     Never guess, assume, or invent identifiers, ports, or statuses; if you have not called a \
+     tool this turn, say so instead of describing what you'd expect to be true. State can \
+     change between turns, so re-call the tool even if you or an earlier turn already answered \
+     a similar question - do not just repeat a previous answer. If an earlier assistant message \
+     in this conversation ends with the line \"[MCP: NONE]\", nothing in it was backed by a \
+     tool call - treat its contents as unverified, not as fact."
+        .to_string()
 }
 
 pub fn expand_tilde(input: &str) -> PathBuf {
