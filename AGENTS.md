@@ -254,11 +254,35 @@ cmd fails with "… was unexpected at this time."
 
 vecnode is an MCP ([Model Context Protocol](https://modelcontextprotocol.io)) **host**: it
 exposes its own host-control functions as MCP tools, using the official
-[`rmcp`](https://crates.io/crates/rmcp) Rust SDK. v1 has one toolset, **Apps**
-([cli/crates/vn/src/mcp/apps_toolset.rs](cli/crates/vn/src/mcp/apps_toolset.rs)):
-`list_apps`, `open_app`, `stop_app` — thin wrappers around `commands::apps::{list, open_reported, stop_reported}`,
-so there is exactly one implementation whether the caller is an external MCP client or
-vecnode's own Ollama chat.
+[`rmcp`](https://crates.io/crates/rmcp) Rust SDK. Two toolsets so far, both implemented as
+`#[tool_router]` blocks on the same `AppsToolset` struct (rmcp merges same-typed routers
+with `+`; see `AppsToolset::new`) — there is exactly one implementation whether the caller
+is an external MCP client or vecnode's own Ollama chat:
+
+- **Apps** ([cli/crates/vn/src/mcp/apps_toolset.rs](cli/crates/vn/src/mcp/apps_toolset.rs)):
+  `list_apps`, `open_app`, `stop_app`, `restart_app` — thin wrappers around
+  `commands::apps::{list, open_reported, stop_reported}` (`restart_app` composes
+  `stop_reported` + `open_reported` in one gated call).
+- **Docker** ([cli/crates/vn/src/mcp/docker_toolset.rs](cli/crates/vn/src/mcp/docker_toolset.rs)):
+  `list_containers`, `container_logs`, `docker_check`, `disk_usage` (read-only — the last
+  wraps `docker system df`) and `docker_stop_all`/`docker_remove_containers`/
+  `docker_remove_images` (host-wide and hard/impossible to undo, so gated) — introspection
+  into and maintenance of whatever docker actually has (any container/image, not just
+  vecnode's own apps), via `commands::apps::{docker_ps_all, docker_logs_tail,
+  docker_check_reported, docker_stop_all_reported, docker_remove_containers_reported,
+  docker_remove_images_reported, docker_disk_usage}`.
+
+A full list of tools and what they do is tracked for humans in
+[docs/mcp-functions.md](docs/mcp-functions.md) — update it whenever a tool is added,
+removed, or its behavior changes.
+
+**`open_app`/`restart_app`'s browser-opening default** depends on who's calling, via
+`AppsToolset::new`'s `default_no_open` param (used when the tool call omits `no_open`):
+headless/external callers (`vn mcp serve`, and the TUI's embedded server for external
+clients) pass `true` — an LLM with no one watching popping your browser is a surprising
+side effect. The in-TUI Ollama chat (`spawn_chat_worker`) passes `false` — the user is
+present and asked for it, so the browser actually launches once the app is ready (Chrome if
+installed, else the OS default — see `commands::apps::open_browser`).
 
 **Reaching it:**
 - `vn mcp serve` — stdio transport, for MCP clients that spawn their own subprocess
@@ -271,13 +295,19 @@ vecnode's own Ollama chat.
   prompt (see below), since the TUI is attached.
 
 **Approval gate** ([cli/crates/vn/src/mcp/approval.rs](cli/crates/vn/src/mcp/approval.rs)):
-`stop_app` is destructive, so it calls `ApprovalGate::request()` before acting. With the
-TUI attached, this arms the input box with the same "type yes to confirm" pattern used for
-destructive menu items (`InputPurpose::ApproveMcp`) and blocks the tool call until you
-answer. Headless (`vn mcp serve`), `ApprovalGate::headless()` auto-denies every request —
-fail-closed, since there's no console free to prompt on (stdio *is* the protocol channel).
-`list_apps`/`open_app` aren't gated; they run immediately, matching the TUI's own
-"vn app open" menu items.
+destructive tools (`stop_app`, `restart_app`, `docker_stop_all`,
+`docker_remove_containers`, `docker_remove_images`) call `ApprovalGate::request()` (via
+`AppsToolset::approval()`, a `pub(crate)` accessor since the docker toolset lives in a
+different module) before acting. With the TUI attached, this arms the input box with the
+same "type yes to confirm" pattern used for destructive menu items
+(`InputPurpose::ApproveMcp`) and blocks the tool call until you answer. Headless (`vn mcp
+serve`), `ApprovalGate::headless()` auto-denies every request — fail-closed, since there's
+no console free to prompt on (stdio *is* the protocol channel). Everything else (`list_apps`,
+`open_app`, `list_containers`, `container_logs`, `docker_check`, `disk_usage`) isn't gated;
+they run immediately — either read-only, or (for `open_app`) matching the TUI's own "vn app
+open" menu items. `docker_stop_all`/`docker_remove_containers`/`docker_remove_images` are
+gated even though there's no single-app equivalent requiring it, because unlike `stop_app`
+they act on every container/image on the host, not just vecnode's own.
 
 **Ollama chat integration** (`spawn_chat_worker` in
 [tui/app.rs](cli/crates/vn/src/tui/app.rs)): every chat turn attaches `ToolInfo` entries
@@ -291,10 +321,16 @@ Output panel as `[MCP] Calling ...` / `[MCP] Result: ...`, and fed back as a
 tool-calling loop.
 
 **To add a tool:** add a `#[tool(description = "...")]` method (with a params struct
-deriving `serde::Deserialize` + `schemars::JsonSchema` if it takes arguments) to
-`AppsToolset` (or a new toolset struct, composed alongside it in `commands/mcp.rs` and
-`tui/app.rs`'s `spawn_mcp_server`), and add a matching arm in `call_by_name` so the Ollama
-integration can dispatch to it by name.
+deriving `serde::Deserialize` + `schemars::JsonSchema` if it takes arguments) to an existing
+`impl AppsToolset` toolset block, and add a matching arm in `call_by_name` (or the relevant
+`call_*_by_name` fallback, like `call_docker_tool_by_name`) so the Ollama integration can
+dispatch to it by name. **To add a whole new toolset:** a new file under `mcp/` with its own
+`impl AppsToolset { #[tool_router(router = my_router)] ... }` block (see
+`docker_toolset.rs`), merged into `AppsToolset::new`'s `tool_router` field with `+` and
+dispatched via a new `call_*_by_name` fallback from `call_by_name`. Bump the tool count
+(`docker_toolset::TOOL_COUNT` is added into `apps_toolset::TOOL_COUNT`, which feeds the
+TUI's "MCP Server" panel), and add the tool to
+[docs/mcp-functions.md](docs/mcp-functions.md).
 
 ## Conventions
 

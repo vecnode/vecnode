@@ -30,7 +30,9 @@ pub async fn run(args: McpArgs, loaded: &LoadedConfig) -> Result<()> {
 /// `ApprovalGate` so both the standalone CLI subcommand (headless, fail-closed)
 /// and (in principle) a TUI-attached caller share one implementation.
 pub async fn serve_stdio(loaded: LoadedConfig, approval: ApprovalGate) -> Result<()> {
-    let toolset = AppsToolset::new(loaded, approval);
+    // External/headless caller: default to not popping a browser (see
+    // `OpenAppParams::no_open`).
+    let toolset = AppsToolset::new(loaded, approval, true);
     let service = toolset
         .serve(stdio())
         .await
@@ -49,8 +51,12 @@ pub async fn serve_http(
     approval: ApprovalGate,
     quiet: bool,
 ) -> Result<()> {
+    // Both callers of `serve_http` (standalone `vn mcp serve --http` and the
+    // TUI's embedded server for *external* MCP clients) are headless from
+    // this toolset's point of view - no one is necessarily watching, so
+    // default to not popping a browser (see `OpenAppParams::no_open`).
     let service = TowerToHyperService::new(StreamableHttpService::new(
-        move || Ok(AppsToolset::new(loaded.clone(), approval.clone())),
+        move || Ok(AppsToolset::new(loaded.clone(), approval.clone(), true)),
         LocalSessionManager::default().into(),
         Default::default(),
     ));

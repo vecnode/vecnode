@@ -367,72 +367,188 @@ pub fn list() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// read-only docker introspection (used by `vn mcp`'s docker toolset)
+// ---------------------------------------------------------------------------
+
+/// One row of `docker ps -a`, as seen by [`docker_ps_all`].
+pub struct ContainerInfo {
+    pub id: String,
+    pub name: String,
+    pub image: String,
+    pub state: String,
+    pub status: String,
+    pub ports: String,
+}
+
+/// List every container docker knows about (running or not) - not just the
+/// ones vecnode manages, since the point is to answer "what does docker
+/// actually have" rather than re-describe [`APP_NAMES`].
+pub fn docker_ps_all() -> Result<Vec<ContainerInfo>> {
+    check_docker_available()?;
+    let output = Command::new("docker")
+        .args(["ps", "-a", "--format", "{{json .}}"])
+        .stdin(Stdio::null())
+        .output()
+        .context("failed to run: docker ps -a")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("docker ps -a failed: {}", stderr.trim());
+    }
+
+    let mut containers = Vec::new();
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let value: serde_json::Value = serde_json::from_str(line)
+            .with_context(|| format!("failed to parse docker ps output: {line}"))?;
+        let field = |key: &str| {
+            value
+                .get(key)
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string()
+        };
+        containers.push(ContainerInfo {
+            id: field("ID"),
+            name: field("Names"),
+            image: field("Image"),
+            state: field("State"),
+            status: field("Status"),
+            ports: field("Ports"),
+        });
+    }
+    Ok(containers)
+}
+
+/// Tail a container's logs (stdout+stderr combined, in that order).
+pub fn docker_logs_tail(name: &str, lines: u32) -> Result<String> {
+    check_docker_available()?;
+    let output = Command::new("docker")
+        .args(["logs", "--tail", &lines.to_string(), name])
+        .stdin(Stdio::null())
+        .output()
+        .with_context(|| format!("failed to run: docker logs {name}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("docker logs {name} failed: {}", stderr.trim());
+    }
+    let mut text = String::from_utf8_lossy(&output.stdout).to_string();
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok(text)
+}
+
+// ---------------------------------------------------------------------------
 // docker maintenance (vn docker check|stop-all|remove-containers|remove-images)
 // ---------------------------------------------------------------------------
 
 pub fn docker_check() -> Result<()> {
-    check_docker_ready(&mut println_reporter)?;
-    let status = Command::new("docker")
+    docker_check_reported(&mut println_reporter)
+}
+
+/// Report-based twin of [`docker_check`] - MCP tool wrappers pass a reporter
+/// that captures lines instead of `println!`-ing straight to stdout (which,
+/// unlike the CLI, would corrupt an MCP stdio transport's JSON-RPC stream).
+/// Captures `docker ps`'s own output instead of inheriting stdio for the
+/// same reason.
+pub fn docker_check_reported(report: &mut dyn FnMut(&str)) -> Result<()> {
+    check_docker_ready(report)?;
+    let output = Command::new("docker")
         .arg("ps")
         .stdin(Stdio::null())
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
+        .output()
         .context("failed to run docker ps")?;
-    if !status.success() {
-        bail!("docker ps exited with status: {status}");
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!(
+            "docker ps exited with status {}: {}",
+            output.status,
+            stderr.trim()
+        );
+    }
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        report(line);
     }
     let containers = docker_lines(&["ps", "-aq"])?.len();
     let images = docker_lines(&["images", "-aq"])?.len();
-    println!("Containers: {containers}");
-    println!("Images: {images}");
+    report(&format!("Containers: {containers}"));
+    report(&format!("Images: {images}"));
     Ok(())
 }
 
 pub fn docker_stop_all() -> Result<()> {
-    check_docker_ready(&mut println_reporter)?;
+    docker_stop_all_reported(&mut println_reporter)
+}
+
+pub fn docker_stop_all_reported(report: &mut dyn FnMut(&str)) -> Result<()> {
+    check_docker_ready(report)?;
     let running = docker_lines(&["ps", "-q"])?;
     if running.is_empty() {
-        println!("[DOCKER] [INFO] No running containers to stop.");
+        report("[DOCKER] [INFO] No running containers to stop.");
         return Ok(());
     }
-    println!("[DOCKER] [INFO] Stopping all running containers...");
+    report("[DOCKER] [INFO] Stopping all running containers...");
     for id in &running {
         let _ = docker_quiet(&["stop", id]);
     }
-    println!("[DOCKER] [OK] All running containers stopped.");
+    report("[DOCKER] [OK] All running containers stopped.");
     Ok(())
 }
 
 pub fn docker_remove_containers() -> Result<()> {
-    check_docker_ready(&mut println_reporter)?;
-    docker_stop_all()?;
+    docker_remove_containers_reported(&mut println_reporter)
+}
+
+pub fn docker_remove_containers_reported(report: &mut dyn FnMut(&str)) -> Result<()> {
+    check_docker_ready(report)?;
+    docker_stop_all_reported(report)?;
     let all = docker_lines(&["ps", "-aq"])?;
     if all.is_empty() {
-        println!("[DOCKER] [INFO] No containers to remove.");
+        report("[DOCKER] [INFO] No containers to remove.");
         return Ok(());
     }
-    println!("[DOCKER] [INFO] Removing all containers...");
+    report("[DOCKER] [INFO] Removing all containers...");
     for id in &all {
         let _ = docker_quiet(&["rm", "-f", id]);
     }
-    println!("[DOCKER] [OK] All containers removed.");
+    report("[DOCKER] [OK] All containers removed.");
     Ok(())
 }
 
 pub fn docker_remove_images() -> Result<()> {
-    check_docker_ready(&mut println_reporter)?;
+    docker_remove_images_reported(&mut println_reporter)
+}
+
+pub fn docker_remove_images_reported(report: &mut dyn FnMut(&str)) -> Result<()> {
+    check_docker_ready(report)?;
     let images = docker_lines(&["images", "-aq"])?;
     if images.is_empty() {
-        println!("[DOCKER] [INFO] No images to remove.");
+        report("[DOCKER] [INFO] No images to remove.");
         return Ok(());
     }
-    println!("[DOCKER] [INFO] Removing all Docker images...");
+    report("[DOCKER] [INFO] Removing all Docker images...");
     for id in &images {
         let _ = docker_quiet(&["rmi", "-f", id]);
     }
-    println!("[DOCKER] [OK] All images removed.");
+    report("[DOCKER] [OK] All images removed.");
     Ok(())
+}
+
+/// Wraps `docker system df` - a human-readable breakdown of disk space used
+/// by images, containers, and build cache.
+pub fn docker_disk_usage() -> Result<String> {
+    check_docker_available()?;
+    let output = Command::new("docker")
+        .args(["system", "df"])
+        .stdin(Stdio::null())
+        .output()
+        .context("failed to run: docker system df")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        bail!("docker system df failed: {}", stderr.trim());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -623,15 +739,7 @@ fn run_docker_streaming(args: &[String], report: &mut dyn FnMut(&str)) -> Result
 fn wait_ready(plan: &AppPlan) -> Result<bool> {
     for _ in 0..plan.wait_tries {
         if container_state(plan.container)? != ContainerState::Running {
-            let logs = Command::new("docker")
-                .args(["logs", "--tail", "15", plan.container])
-                .output()
-                .map(|o| {
-                    let mut text = String::from_utf8_lossy(&o.stdout).to_string();
-                    text.push_str(&String::from_utf8_lossy(&o.stderr));
-                    text
-                })
-                .unwrap_or_default();
+            let logs = docker_logs_tail(plan.container, 15).unwrap_or_default();
             bail!(
                 "container '{}' exited during startup. Last log lines:
 {}",
