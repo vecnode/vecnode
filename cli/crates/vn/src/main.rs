@@ -129,8 +129,12 @@ struct DockerArgs {
 #[derive(Subcommand, Debug)]
 enum DockerSubcommand {
     Ps,
-    Up { service: Option<String> },
-    Down { service: Option<String> },
+    Up {
+        service: Option<String>,
+    },
+    Down {
+        service: Option<String>,
+    },
     Prune,
     /// Check the Docker daemon and show container/image counts.
     Check,
@@ -150,8 +154,14 @@ struct GitArgs {
 
 #[derive(Subcommand, Debug)]
 enum GitSubcommand {
-    Sync { #[arg(long)] root: Option<PathBuf> },
-    Status { #[arg(long)] root: Option<PathBuf> },
+    Sync {
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
+    Status {
+        #[arg(long)]
+        root: Option<PathBuf>,
+    },
 }
 
 #[tokio::main]
@@ -173,7 +183,7 @@ async fn main() -> Result<()> {
         Some(Command::Net(args)) => commands::net::run(args)?,
         Some(Command::Run(args)) => commands::run::run(args, &loaded)?,
         Some(Command::Tray) => tray::run(repo_root)?,
-        Some(Command::Tui) | None => tui::app::run(repo_root)?,
+        Some(Command::Tui) | None => tui::app::run(repo_root, loaded)?,
     }
 
     Ok(())

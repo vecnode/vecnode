@@ -57,7 +57,10 @@ fn validate_docker_service_name(name: &str) -> Result<()> {
         return Err(anyhow!("docker service name cannot be empty"));
     }
 
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.') {
+    if !name
+        .chars()
+        .all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '.')
+    {
         return Err(anyhow!(
             "invalid docker service name '{}': only alphanumerics, underscore, hyphen, and period allowed",
             name

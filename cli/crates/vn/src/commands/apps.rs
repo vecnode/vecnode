@@ -69,7 +69,10 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
             AppPlan {
                 container: "vecnode-docs",
                 image: "vecnode-docs:latest".into(),
-                build: Some((root.join("docs"), Some(root.join("docs").join("Dockerfile")))),
+                build: Some((
+                    root.join("docs"),
+                    Some(root.join("docs").join("Dockerfile")),
+                )),
                 lifecycle: Lifecycle::Recreate { rm_on_exit: false },
                 harden: true,
                 pids_limit: Some(512),
@@ -125,7 +128,9 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
             wait_port: 8080,
             wait_tries: 40,
             open_url: "http://localhost:8080".into(),
-            info: vec!["Free core only: premium module, analytics and update checks disabled.".into()],
+            info: vec![
+                "Free core only: premium module, analytics and update checks disabled.".into(),
+            ],
         },
         "library-portal" => {
             let root = repo_root(loaded)?;
@@ -174,7 +179,11 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
                 image: "vecnode-doc-processor:latest".into(),
                 build: Some((
                     root.clone(),
-                    Some(root.join("docker").join("media-processor").join("Dockerfile")),
+                    Some(
+                        root.join("docker")
+                            .join("media-processor")
+                            .join("Dockerfile"),
+                    ),
                 )),
                 lifecycle: Lifecycle::Recreate { rm_on_exit: true },
                 harden: true,
@@ -186,15 +195,10 @@ fn plan_for(name: &str, loaded: &LoadedConfig) -> Result<AppPlan> {
                 wait_port: 8086,
                 wait_tries: 20,
                 open_url: "http://localhost:8085".into(),
-                info: vec![
-                    "API: http://localhost:8086  (PDF output goes to your Desktop)".into(),
-                ],
+                info: vec!["API: http://localhost:8086  (PDF output goes to your Desktop)".into()],
             }
         }
-        other => bail!(
-            "unknown app: {other}. Available: {}",
-            APP_NAMES.join(", ")
-        ),
+        other => bail!("unknown app: {other}. Available: {}", APP_NAMES.join(", ")),
     };
     Ok(plan)
 }
@@ -234,7 +238,8 @@ pub fn open(name: &str, loaded: &LoadedConfig, no_open: bool) -> Result<()> {
             let state = container_state(plan.container)?;
             if state == ContainerState::Running {
                 println!("[OK] Container '{}' is already running.", plan.container);
-            } else if state == ContainerState::Stopped && container_exit_code(plan.container)? == 0 {
+            } else if state == ContainerState::Stopped && container_exit_code(plan.container)? == 0
+            {
                 println!("[INFO] Starting existing container '{}'...", plan.container);
                 docker_quiet(&["start", plan.container])
                     .with_context(|| format!("failed to start container {}", plan.container))?;
@@ -260,7 +265,10 @@ pub fn open(name: &str, loaded: &LoadedConfig, no_open: bool) -> Result<()> {
     if wait_ready(&plan)? {
         println!("[OK] {} is ready.", name);
     } else {
-        println!("[WARNING] {} did not respond yet; opening the browser anyway.", name);
+        println!(
+            "[WARNING] {} did not respond yet; opening the browser anyway.",
+            name
+        );
     }
 
     if no_open {
@@ -274,7 +282,10 @@ pub fn open(name: &str, loaded: &LoadedConfig, no_open: bool) -> Result<()> {
     for line in &plan.info {
         println!("[INFO] {}", line);
     }
-    println!("[INFO] Stop:  vn app stop {}   (or: docker stop {})", name, plan.container);
+    println!(
+        "[INFO] Stop:  vn app stop {}   (or: docker stop {})",
+        name, plan.container
+    );
     println!("[INFO] Logs:  docker logs -f {}", plan.container);
     Ok(())
 }
@@ -284,7 +295,10 @@ pub fn stop(name: &str, loaded: &LoadedConfig) -> Result<()> {
     check_docker_available()?;
 
     if container_state(plan.container)? == ContainerState::Absent {
-        println!("[INFO] No '{}' container exists. Nothing to stop.", plan.container);
+        println!(
+            "[INFO] No '{}' container exists. Nothing to stop.",
+            plan.container
+        );
         return Ok(());
     }
     println!("[INFO] Stopping '{}'...", plan.container);
@@ -553,11 +567,13 @@ fn http_probe(port: u16) -> bool {
     };
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
     if stream
-        .write_all(b"GET / HTTP/1.1
+        .write_all(
+            b"GET / HTTP/1.1
 Host: localhost
 Connection: close
 
-")
+",
+        )
         .is_err()
     {
         return false;
@@ -571,10 +587,7 @@ Connection: close
 
 fn container_exit_code(name: &str) -> Result<i64> {
     let lines = docker_lines(&["inspect", "-f", "{{.State.ExitCode}}", name])?;
-    Ok(lines
-        .first()
-        .and_then(|l| l.parse().ok())
-        .unwrap_or(0))
+    Ok(lines.first().and_then(|l| l.parse().ok()).unwrap_or(0))
 }
 
 fn open_browser(url: &str) {
@@ -582,13 +595,25 @@ fn open_browser(url: &str) {
     {
         let chrome_candidates = [
             std::env::var("ProgramFiles").ok().map(|p| {
-                PathBuf::from(p).join("Google").join("Chrome").join("Application").join("chrome.exe")
+                PathBuf::from(p)
+                    .join("Google")
+                    .join("Chrome")
+                    .join("Application")
+                    .join("chrome.exe")
             }),
             std::env::var("ProgramFiles(x86)").ok().map(|p| {
-                PathBuf::from(p).join("Google").join("Chrome").join("Application").join("chrome.exe")
+                PathBuf::from(p)
+                    .join("Google")
+                    .join("Chrome")
+                    .join("Application")
+                    .join("chrome.exe")
             }),
             std::env::var("LOCALAPPDATA").ok().map(|p| {
-                PathBuf::from(p).join("Google").join("Chrome").join("Application").join("chrome.exe")
+                PathBuf::from(p)
+                    .join("Google")
+                    .join("Chrome")
+                    .join("Application")
+                    .join("chrome.exe")
             }),
         ];
         for candidate in chrome_candidates.into_iter().flatten() {
@@ -613,7 +638,12 @@ fn open_browser(url: &str) {
     }
     #[cfg(target_os = "linux")]
     {
-        for browser in ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser"] {
+        for browser in [
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+        ] {
             if Command::new("which")
                 .arg(browser)
                 .stdout(Stdio::null())
@@ -623,12 +653,20 @@ fn open_browser(url: &str) {
                 .unwrap_or(false)
             {
                 println!("[INFO] Opening Chrome at {url}");
-                let _ = Command::new(browser).arg(url).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+                let _ = Command::new(browser)
+                    .arg(url)
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::null())
+                    .spawn();
                 return;
             }
         }
         println!("[INFO] Chrome not found; opening default browser at {url}");
-        let _ = Command::new("xdg-open").arg(url).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+        let _ = Command::new("xdg-open")
+            .arg(url)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {

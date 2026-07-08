@@ -8,8 +8,15 @@ Safety model (this app downloads from arbitrary, untrusted web links):
   * The container runs non-root, with all Linux capabilities dropped and
     no-new-privileges (set by the run scripts).
   * Only http/https URLs are accepted, and URLs whose host resolves to a
-    loopback/private/link-local/reserved address are rejected (a basic SSRF
-    guard so the tool can't be aimed at the host or LAN).
+    loopback/private/link-local/reserved address are rejected up front (a
+    fast-fail SSRF check on the initial URL).
+  * yt-dlp itself is routed through a small in-container egress-guard proxy
+    (see start_egress_proxy/EGRESS_PROXY_PORT below) that re-resolves and
+    re-validates *every* connection yt-dlp makes -- not just the initial URL
+    -- at the moment it actually connects. This closes the gap the fast-fail
+    check alone can't: yt-dlp following a redirect to a different (private)
+    host, or a hostname resolving differently between the initial check and
+    yt-dlp's own lookup (DNS rebinding).
   * yt-dlp runs with --ignore-config (no attacker-supplied config is read),
     --restrict-filenames, --no-playlist and a --max-filesize cap. It never
     runs post-process commands.
@@ -26,6 +33,7 @@ import shutil
 import socket
 import subprocess
 import tempfile
+import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -164,6 +172,172 @@ def host_is_blocked(host: str) -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Egress guard: a tiny in-container forward proxy yt-dlp is pointed at (see
+# --proxy in handle_download), so every outbound connection it makes -- not
+# just the initial URL -- is resolved and validated at actual TCP-connect
+# time. `host_is_blocked` above only checks the *original* URL's host before
+# yt-dlp ever runs; it can't see the further connections yt-dlp itself makes
+# (redirects to a different host, CDN nodes, etc.), and a hostname could
+# resolve differently between that check and yt-dlp's own lookup (DNS
+# rebinding). Routing yt-dlp through this proxy closes both gaps: every CONNECT
+# (https) and every absolute-URI request (http) is resolved exactly once and
+# validated before the outbound socket is opened, using the same resolved
+# address for the connection (no second lookup, no rebinding window).
+# ---------------------------------------------------------------------------
+
+EGRESS_PROXY_PORT = int(os.environ.get("EGRESS_PROXY_PORT", "8899"))
+
+
+class _EgressBlocked(Exception):
+    pass
+
+
+def _resolve_validated(host: str, port: int):
+    """Resolve host once and return a single validated address to connect to,
+    or raise `_EgressBlocked`. Validates every returned address (not just the
+    first) so a multi-A-record host can't slip a private address through."""
+    try:
+        infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
+    except OSError as exc:
+        raise _EgressBlocked(f"DNS resolution failed for {host}: {exc}") from exc
+    if not infos:
+        raise _EgressBlocked(f"no address found for {host}")
+    if ALLOW_PRIVATE_HOSTS:
+        return infos[0]
+    for info in infos:
+        ip = info[4][0]
+        try:
+            addr = ipaddress.ip_address(ip)
+        except ValueError:
+            continue
+        if (addr.is_loopback or addr.is_private or addr.is_link_local
+                or addr.is_reserved or addr.is_multicast or addr.is_unspecified):
+            raise _EgressBlocked(f"refusing to connect to blocked address {ip} for host {host}")
+    return infos[0]
+
+
+def _pipe(src: socket.socket, dst: socket.socket) -> None:
+    try:
+        while True:
+            data = src.recv(65536)
+            if not data:
+                break
+            dst.sendall(data)
+    except OSError:
+        pass
+    finally:
+        try:
+            dst.shutdown(socket.SHUT_WR)
+        except OSError:
+            pass
+
+
+def _egress_relay(client_sock, host, port, is_connect, prelude=b""):
+    try:
+        family, socktype, proto, _, sockaddr = _resolve_validated(host, port)
+    except _EgressBlocked as exc:
+        body = str(exc).encode()
+        client_sock.sendall(
+            b"HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: "
+            + str(len(body)).encode() + b"\r\n\r\n" + body
+        )
+        client_sock.close()
+        return
+
+    try:
+        upstream = socket.socket(family, socktype, proto)
+        upstream.settimeout(15)
+        upstream.connect(sockaddr)
+        upstream.settimeout(None)
+    except OSError:
+        client_sock.sendall(b"HTTP/1.1 502 Bad Gateway\r\nConnection: close\r\n\r\n")
+        client_sock.close()
+        return
+
+    if is_connect:
+        client_sock.sendall(b"HTTP/1.1 200 Connection Established\r\n\r\n")
+    elif prelude:
+        upstream.sendall(prelude)
+
+    t1 = threading.Thread(target=_pipe, args=(client_sock, upstream), daemon=True)
+    t2 = threading.Thread(target=_pipe, args=(upstream, client_sock), daemon=True)
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+    for s in (upstream, client_sock):
+        try:
+            s.close()
+        except OSError:
+            pass
+
+
+def _egress_client_thread(client_sock) -> None:
+    try:
+        client_sock.settimeout(10)
+        buf = b""
+        while b"\r\n\r\n" not in buf:
+            chunk = client_sock.recv(4096)
+            if not chunk:
+                client_sock.close()
+                return
+            buf += chunk
+            if len(buf) > 65536:
+                client_sock.close()
+                return
+        client_sock.settimeout(None)
+
+        header_block, sep, rest = buf.partition(b"\r\n\r\n")
+        request_line = header_block.split(b"\r\n", 1)[0].decode("latin-1", "replace")
+        parts = request_line.split()
+        if len(parts) < 2:
+            client_sock.close()
+            return
+        method, target = parts[0].upper(), parts[1]
+
+        if method == "CONNECT":
+            host, _, port_s = target.partition(":")
+            port = int(port_s) if port_s else 443
+            _egress_relay(client_sock, host, port, is_connect=True)
+            return
+
+        # Plain-HTTP absolute-URI proxying (used for http:// targets): forward
+        # the original request bytes verbatim to the validated upstream so
+        # redirects/CDN hosts get the same check as the initial URL.
+        parsed = urllib.parse.urlparse(target)
+        host = parsed.hostname
+        port = parsed.port or 80
+        if not host:
+            client_sock.sendall(b"HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n")
+            client_sock.close()
+            return
+        _egress_relay(client_sock, host, port, is_connect=False, prelude=header_block + sep + rest)
+    except Exception:
+        try:
+            client_sock.close()
+        except OSError:
+            pass
+
+
+def start_egress_proxy() -> None:
+    """Start the loopback-only egress guard proxy in a background thread."""
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", EGRESS_PROXY_PORT))
+    server.listen(64)
+
+    def serve():
+        while True:
+            try:
+                client_sock, _ = server.accept()
+            except OSError:
+                return
+            threading.Thread(target=_egress_client_thread, args=(client_sock,), daemon=True).start()
+
+    threading.Thread(target=serve, daemon=True).start()
+
+
 def sanitize_basename(name: str) -> str:
     """Reduce to a single safe path component (defense-in-depth on top of
     yt-dlp's --restrict-filenames)."""
@@ -261,6 +435,7 @@ class Handler(BaseHTTPRequestHandler):
             "--no-playlist",
             "--restrict-filenames",
             "--no-exec",
+            "--proxy", f"http://127.0.0.1:{EGRESS_PROXY_PORT}",
             "--max-filesize", MAX_FILESIZE,
             "--retries", "3",
             "--socket-timeout", "30",
@@ -274,6 +449,10 @@ class Handler(BaseHTTPRequestHandler):
         env = dict(os.environ)
         env["HOME"] = "/tmp"
         env["XDG_CACHE_HOME"] = "/tmp"
+        # Force everything through the validated egress proxy above; don't let
+        # an inherited proxy env var override the --proxy flag.
+        for key in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy", "ALL_PROXY", "all_proxy"):
+            env.pop(key, None)
 
         try:
             proc = subprocess.run(
@@ -327,6 +506,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
+    start_egress_proxy()
     ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 
 

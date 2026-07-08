@@ -33,7 +33,9 @@ fn scan(target: Option<String>) -> Result<()> {
     if !rustscan_available() {
         eprintln!("[ERROR] rustscan was not found on PATH.");
         eprintln!("[INFO] Install it with: cargo install rustscan");
-        eprintln!("[INFO] The vecnode launchers (run_cli.bat / run_cli.sh) install it automatically.");
+        eprintln!(
+            "[INFO] The vecnode launchers (run_cli.bat / run_cli.sh) install it automatically."
+        );
         bail!("rustscan is not installed");
     }
 
@@ -66,7 +68,9 @@ fn scan(target: Option<String>) -> Result<()> {
         println!(
             "[INFO] Scope: common ports only (fast subnet sweep; RustScan has no host discovery)."
         );
-        println!("[INFO] Tip: pass an explicit IP/host (vn net scan <host>) for a full 65535-port scan.");
+        println!(
+            "[INFO] Tip: pass an explicit IP/host (vn net scan <host>) for a full 65535-port scan."
+        );
     }
     println!("[INFO] Running: rustscan {}", args.join(" "));
     println!();

@@ -27,7 +27,15 @@ pub async fn run(args: AiArgs, loaded: &LoadedConfig) -> Result<()> {
             let model = model.unwrap_or_else(|| loaded.config.ollama.model.clone());
             let session = session.unwrap_or_else(|| "tui".to_string());
             let system = system.or_else(|| loaded.config.prompts.system.clone());
-            chat(&ollama, loaded, &model, &session, system.as_deref(), &message).await
+            chat(
+                &ollama,
+                loaded,
+                &model,
+                &session,
+                system.as_deref(),
+                &message,
+            )
+            .await
         }
     }
 }
@@ -36,7 +44,7 @@ pub async fn run(args: AiArgs, loaded: &LoadedConfig) -> Result<()> {
 /// `http://127.0.0.1:11434`. `Ollama::new` is deprecated upstream but is the
 /// stable way to point at a specific host/port across ollama-rs versions.
 #[allow(deprecated)]
-fn build_client(host: &str) -> Ollama {
+pub(crate) fn build_client(host: &str) -> Ollama {
     let (host, port) = split_host_port(host, 11434);
     Ollama::new(host, port)
 }
@@ -79,7 +87,9 @@ async fn models(ollama: &Ollama) -> Result<()> {
         .context("failed to list models from Ollama")?;
 
     if models.is_empty() {
-        eprintln!("[INFO] No models installed. Use 'vn ai pull <name>' or the Download Model button.");
+        eprintln!(
+            "[INFO] No models installed. Use 'vn ai pull <name>' or the Download Model button."
+        );
         return Ok(());
     }
 
@@ -103,7 +113,8 @@ async fn pull(ollama: &Ollama, name: &str) -> Result<()> {
     let mut last_message = String::new();
     let mut last_percent: i64 = -1;
     while let Some(item) = stream.next().await {
-        let status = item.map_err(|err| anyhow!("error downloading model '{}': {:?}", name, err))?;
+        let status =
+            item.map_err(|err| anyhow!("error downloading model '{}': {:?}", name, err))?;
 
         match (status.completed, status.total) {
             (Some(done), Some(total)) if total > 0 => {

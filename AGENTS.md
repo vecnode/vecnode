@@ -93,7 +93,11 @@ cargo fmt --manifest-path cli/Cargo.toml
 ```
 
 There is no test suite yet. **Always `cargo build` (and ideally `clippy`) after Rust
-changes**; the TUI is hard to exercise headlessly.
+changes**; the TUI is hard to exercise headlessly. CI
+([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `cargo fmt --check`, `clippy
+-D warnings`, and `cargo build --locked` on Ubuntu and Windows on every push/PR to
+`main`, plus `cargo deny` and `cargo audit` — but it doesn't replace running these
+locally before you push, since the TUI itself still needs a manual smoke test.
 
 ## How the TUI dispatches work
 
@@ -101,7 +105,21 @@ changes**; the TUI is hard to exercise headlessly.
 `CommandItem` whose `Action::Execute(args)` re-invokes the **current `vn` executable**
 as a child process with those args (e.g. `["run", "win11-check-internet"]` or
 `["net", "scan"]`), piping stdout/stderr into the "CLI Output" panel. So adding a TUI
-action = add a `CommandItem` pointing at an existing `vn` subcommand.
+action = add a `CommandItem` pointing at an existing `vn` subcommand. Spawned commands
+run via the `command-group` crate (`group_spawn()`), so each owns its own process
+group/job object — killing one (or quitting the TUI) also kills anything it spawned
+(e.g. a `docker build`), instead of leaving it orphaned.
+
+Destructive menu items use `Action::ExecuteConfirm` instead of `Action::Execute`: it
+arms the input box with `InputPurpose::ConfirmDestructive` and only runs the command if
+you type `yes`. Use it for anything that stops/removes containers or images; regular
+commands stay `Action::Execute`.
+
+Keybindings beyond Up/Down/Enter: `x` kills every running background process without
+quitting the TUI; `e` scrolls the CLI Output panel to the previous error/stderr line;
+`Esc` steps back one menu level (or cancels the input box), only quitting from the root
+Dashboard — `q` still quits immediately from anywhere in the Dashboard. Mouse wheel
+scrolls CLI Output; left-clicking a dashboard row selects and runs it.
 
 `commands/run.rs` `map_script()` is a match from a script name to a relative path
 under `scripts/`. To add a script-backed task: drop the script in the right OS folder,
@@ -180,10 +198,16 @@ reuses its container), docs (mdBook, port 3000), plus the locally built **librar
 against current sites). Paste a video URL, pick **MP3 / WAV / MP4**; the file is saved to the
 host **Desktop**, bind-mounted at `/output` by `vn app open media-downloader` (port 8095). Because it fetches arbitrary web links, it is hardened: the container runs **non-root**
 (Linux uses `--user $(id -u):$(id -g)`), with **`--cap-drop ALL`**, **`--security-opt
-no-new-privileges`** and a pids limit; the app accepts only http/https URLs, **rejects hosts
-that resolve to loopback/private/link-local** (basic SSRF guard), runs yt-dlp with
-`--ignore-config --restrict-filenames --max-filesize`, and saves via a sanitized,
-traversal-checked, collision-safe filename confined to the mount.
+no-new-privileges`** and a pids limit; the app accepts only http/https URLs and rejects
+hosts that resolve to loopback/private/link-local up front. Beyond that initial check,
+`yt-dlp` itself is pointed at a small **in-container egress-guard proxy**
+(`start_egress_proxy` in `app.py`, `--proxy http://127.0.0.1:$EGRESS_PROXY_PORT`) that
+re-resolves and re-validates every connection yt-dlp makes at actual connect time — this
+is what catches a redirect to a different (private) host or DNS rebinding between the
+initial check and yt-dlp's own lookup, since the fast-fail check alone only ever sees the
+first URL. yt-dlp also runs with `--ignore-config --restrict-filenames --max-filesize`,
+and saves via a sanitized, traversal-checked, collision-safe filename confined to the
+mount.
 
 **library-portal (custom, locally built):** a lightweight viewer/manager for the repo's
 `library/` folder, living in [docker/library-portal/](docker/library-portal/) —

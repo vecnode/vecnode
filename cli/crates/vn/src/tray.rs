@@ -27,8 +27,7 @@ mod windows {
     use windows_sys::Win32::System::Console::{FreeConsole, GetConsoleWindow};
     use windows_sys::Win32::UI::Shell::ShellExecuteW;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        LoadIconW, MessageBoxW, ShowWindow, IDI_SHIELD, MB_ICONERROR, MB_OK, SW_HIDE,
-        SW_SHOWNORMAL,
+        LoadIconW, MessageBoxW, ShowWindow, IDI_SHIELD, MB_ICONERROR, MB_OK, SW_HIDE, SW_SHOWNORMAL,
     };
 
     struct InstanceGuard {
@@ -200,7 +199,14 @@ mod windows {
         let cwd_w = to_wide(cwd);
 
         let result = unsafe {
-            ShellExecuteW(0, operation_w.as_ptr(), file_w.as_ptr(), params_w.as_ptr(), cwd_w.as_ptr(), SW_SHOWNORMAL)
+            ShellExecuteW(
+                0,
+                operation_w.as_ptr(),
+                file_w.as_ptr(),
+                params_w.as_ptr(),
+                cwd_w.as_ptr(),
+                SW_SHOWNORMAL,
+            )
         };
 
         if result <= 32 {
