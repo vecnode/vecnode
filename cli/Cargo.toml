@@ -14,11 +14,12 @@ crossterm = "0.28"
 dirs = "5.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
 ratatui = "0.28"
+regex = "1"
 ollama-rs = { version = "0.3", features = ["stream"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sysinfo = "0.31"
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "signal", "time"] }
 toml = "0.8"
 futures-util = "0.3"
 chrono = { version = "0.4", features = ["serde"] }

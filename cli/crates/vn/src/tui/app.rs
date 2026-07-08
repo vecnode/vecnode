@@ -1058,6 +1058,18 @@ fn spawn_mcp_server(
 /// that can chain so a confused model can't loop forever.
 const MAX_TOOL_ROUNDS: u32 = 4;
 
+/// Bounds a single Ollama chat completion call. `ollama-rs`'s HTTP client has
+/// no timeout of its own, so a hung/stuck local model (or a confused one
+/// stuck generating a runaway reply after e.g. a hallucinated tool call
+/// error) would otherwise block `spawn_chat_worker`'s single worker thread
+/// forever - no crash, no error, just the CLI Output panel going silent
+/// after "[INFO] Waiting for reply..." while the rest of the TUI (a
+/// different thread) stays responsive, which is exactly what makes this look
+/// like "the CLI output stopped" rather than an obvious hang. Generous on
+/// purpose: real replies with tool calls can legitimately take a while on
+/// slow hardware.
+const CHAT_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
+
 /// Build the Ollama tool definitions for every tool `toolset` exposes, from
 /// the same JSON-schema metadata an MCP client would see via `tools/list`.
 /// `ollama-rs`'s `ToolInfo`/`ToolFunctionInfo` are plain public structs, so
@@ -1136,6 +1148,16 @@ fn spawn_chat_worker(
         // app is ready, matching what "open the doc processor" reads as.
         let toolset = AppsToolset::new(loaded, mcp_approval, false);
         let tools = build_ollama_tools(&toolset);
+        // Forwards each progress line a report-based tool call produces (e.g.
+        // a docker build's output) straight to the CLI Output panel as it
+        // happens, instead of the panel sitting idle for the whole call and
+        // then dumping everything at once when `call_by_name` returns.
+        let tool_live: crate::mcp::LiveReporter = {
+            let tx = tx.clone();
+            Arc::new(move |line: &str| {
+                let _ = tx.send(ProcEvent::McpActivity(line.to_string()));
+            })
+        };
 
         while let Ok(req) = req_rx.recv() {
             let model = req.model.unwrap_or_else(|| default_model.clone());
@@ -1154,12 +1176,32 @@ fn spawn_chat_worker(
             }
             messages.push(ChatMessage::user(req.message.clone()));
 
+            // Ground truth for whether this reply is backed by an actual tool
+            // call, or is just the model talking - a small local model will
+            // sometimes claim to have done something (e.g. "restarted the
+            // container!") without calling any tool. Set the moment any tool
+            // call is dispatched below; checked once the turn finishes to tag
+            // the reply if it's still false. See `[MCP: NONE]` below.
+            let mut tool_called = false;
+
             let result: std::result::Result<String, ollama_rs::error::OllamaError> =
                 rt.block_on(async {
                     for _ in 0..MAX_TOOL_ROUNDS {
                         let request = ChatMessageRequest::new(model.clone(), messages.clone())
                             .tools(tools.clone());
-                        let response = ollama.send_chat_messages(request).await?;
+                        let response = tokio::time::timeout(
+                            CHAT_REQUEST_TIMEOUT,
+                            ollama.send_chat_messages(request),
+                        )
+                        .await
+                        .unwrap_or_else(|_elapsed| {
+                            Err(ollama_rs::error::OllamaError::Other(format!(
+                                "chat request to Ollama timed out after {}s - the model may be \
+                                 hung/stuck generating, or Ollama itself may be unresponsive; \
+                                 try again, or restart Ollama if this keeps happening",
+                                CHAT_REQUEST_TIMEOUT.as_secs()
+                            )))
+                        })?;
                         let msg = response.message;
 
                         if msg.tool_calls.is_empty() {
@@ -1168,13 +1210,18 @@ fn spawn_chat_worker(
 
                         messages.push(msg.clone());
                         for call in &msg.tool_calls {
+                            tool_called = true;
                             let name = call.function.name.clone();
                             let _ = tx.send(ProcEvent::McpActivity(format!(
                                 "[MCP] Calling {}({})",
                                 name, call.function.arguments
                             )));
                             let text = match toolset
-                                .call_by_name(&name, call.function.arguments.clone())
+                                .call_by_name(
+                                    &name,
+                                    call.function.arguments.clone(),
+                                    tool_live.clone(),
+                                )
                                 .await
                             {
                                 Ok(result) => call_tool_result_text(&result),
@@ -1200,6 +1247,23 @@ fn spawn_chat_worker(
                         ))));
                         continue;
                     }
+                    // Tag every reply this turn didn't back with a tool call -
+                    // distinct from the existing "[MCP] Calling .../[MCP]
+                    // Result: ..." activity lines (note the missing `]` before
+                    // the colon there) so grepping the log for one doesn't
+                    // pick up the other. Ground truth for spotting a model
+                    // that claims to have done something it never actually
+                    // called a tool for. On its own line *after* the reply
+                    // (see `MCP_NONE_TAG` in the render loop, which colors it
+                    // the same Magenta as `[MCP]` activity lines) rather than
+                    // appended inline, so it reads as a distinct marker, not
+                    // part of the message - `split_to_entries` (called from
+                    // `pump_process`) turns the `\n` into its own log line.
+                    let reply = if tool_called {
+                        reply
+                    } else {
+                        format!("{reply}\n{MCP_NONE_TAG}")
+                    };
                     let _ = tx.send(ProcEvent::ChatReply(Ok(format!("{}: {}", model, reply))));
                 }
                 Err(err) => {
@@ -1213,6 +1277,13 @@ fn spawn_chat_worker(
 
     req_tx
 }
+
+/// Appended, on its own line, after a chat reply that this turn made zero
+/// tool calls for - see `spawn_chat_worker`. `spans_for_stdout_line` renders
+/// a line that's exactly this tag in its own Magenta span, matching `[MCP]`
+/// activity lines' color, so it reads as a distinct marker line rather than
+/// part of the message.
+const MCP_NONE_TAG: &str = "[MCP: NONE]";
 
 /// Color-code CLI Output lines by their leading `[TAG]`, layered on top of
 /// (not replacing) the existing per-severity colors: only `Stdout`/`Info`
@@ -1253,6 +1324,20 @@ fn spans_with_bold(text: &str, base: Style) -> Vec<Span<'static>> {
             Span::styled(part.to_string(), style)
         })
         .collect()
+}
+
+/// Builds the styled spans for a `LogEntry::Stdout` line: DIM/tagged body
+/// text via `spans_with_bold`, except a line that's exactly `MCP_NONE_TAG`
+/// (see `spawn_chat_worker`, which puts it on its own line after a reply)
+/// renders entirely in the same Magenta as `[MCP]` activity lines.
+fn spans_for_stdout_line(text: &str) -> Vec<Span<'static>> {
+    match text {
+        MCP_NONE_TAG => vec![Span::styled(
+            text.to_string(),
+            Style::default().fg(Color::Magenta),
+        )],
+        _ => spans_with_bold(text, Style::default().fg(tagged_line_color(text, DIM))),
+    }
 }
 
 fn split_to_entries(chunk: String, is_stderr: bool) -> Vec<String> {
@@ -2079,10 +2164,7 @@ fn event_loop(
                         // long-form reading. [INFO] keeps its own MUTED tone
                         // unchanged below. `**bold**` markers (common in AI
                         // replies) render bold instead of literal asterisks.
-                        Line::from(spans_with_bold(
-                            text,
-                            Style::default().fg(tagged_line_color(text, DIM)),
-                        ))
+                        Line::from(spans_for_stdout_line(text))
                     } else {
                         match entry {
                             LogEntry::Info(text) => Line::from(spans_with_bold(
@@ -2231,5 +2313,24 @@ mod tests {
         let spans = spans_with_bold("no markers here", Style::default());
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].content.to_string(), "no markers here");
+    }
+
+    #[test]
+    fn spans_for_stdout_line_renders_mcp_none_tag_line_entirely_magenta() {
+        // `spawn_chat_worker` puts the tag on its own line (see
+        // `MCP_NONE_TAG`'s doc), so by the time it reaches this function it's
+        // always the whole line, not a suffix of the reply's last line.
+        let spans = spans_for_stdout_line(MCP_NONE_TAG);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content.to_string(), "[MCP: NONE]");
+        assert_eq!(spans[0].style.fg, Some(Color::Magenta));
+    }
+
+    #[test]
+    fn spans_for_stdout_line_leaves_untagged_text_as_one_span() {
+        let spans = spans_for_stdout_line("just a normal reply");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content.to_string(), "just a normal reply");
+        assert_eq!(spans[0].style.fg, Some(DIM));
     }
 }
