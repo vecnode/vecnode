@@ -1,23 +1,32 @@
+use crate::config::{expand_tilde, LoadedConfig};
+use crate::ollama::session::{session_path, SessionFile};
 use anyhow::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEventKind};
-use crossterm::terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen};
-use crossterm::{execute, ExecutableCommand};
+use chrono::Local;
+use command_group::{CommandGroup, GroupChild};
+use crossterm::event::{
+    self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind, MouseButton,
+    MouseEventKind,
+};
+use crossterm::execute;
+use crossterm::terminal::{
+    disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
+};
+use ollama_rs::generation::chat::{request::ChatMessageRequest, ChatMessage};
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::{Constraint, Direction, Layout};
+use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Row, Table};
 use ratatui::Terminal;
-use chrono::Local;
 use std::env;
 use std::fs::OpenOptions;
 use std::io::Read;
 use std::io::Write;
 use std::io::{self, Stdout};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 // ---- Theme: one cyan accent (the Docker header / button blue) on the
 // terminal's (black) background, plus two grays. Two "blues" total: this cyan
@@ -46,16 +55,22 @@ enum MenuKind {
 }
 
 /// What a typed line in the input box should do when submitted.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, PartialEq)]
 enum InputPurpose {
     None,
     DownloadModel,
     Chat,
+    /// Armed by `Action::ExecuteConfirm`: only runs `args` (labelled `label`)
+    /// if the typed line is "yes"; anything else cancels.
+    ConfirmDestructive(Vec<&'static str>, &'static str),
 }
 
 #[derive(Clone)]
 enum Action {
     Execute(Vec<&'static str>),
+    /// Like `Execute`, but requires typing "yes" in the input box first.
+    /// Used for destructive commands (stop/remove all containers or images).
+    ExecuteConfirm(Vec<&'static str>),
     OpenMenu(MenuKind),
     BackToRoot,
     /// Query Ollama for installed models and open the model-selection menu.
@@ -73,6 +88,14 @@ struct CommandItem {
 enum ProcEvent {
     Stdout(String),
     Stderr(String),
+    /// A reply from the persistent chat worker thread (see `spawn_chat_worker`).
+    ChatReply(std::result::Result<String, String>),
+}
+
+/// One turn sent to the persistent chat worker thread.
+struct ChatRequest {
+    model: Option<String>,
+    message: String,
 }
 
 enum LogEntry {
@@ -85,6 +108,9 @@ enum LogEntry {
 
 enum Focus {
     Dashboard,
+    /// The "Running" panel listing background processes; lets you select and
+    /// kill one individually.
+    Running,
     Input,
 }
 
@@ -96,7 +122,11 @@ struct DockerPanelData {
 
 struct RunningProcess {
     label: String,
-    child: Child,
+    /// Spawned via `group_spawn()` so it owns its own process group (Unix) /
+    /// job object (Windows): killing it also kills any children it spawned
+    /// (e.g. `docker build`, `yt-dlp`), instead of leaving them orphaned.
+    child: GroupChild,
+    started_at: Instant,
 }
 
 struct AppState {
@@ -119,11 +149,21 @@ struct AppState {
     selected_model: Option<String>,
     model_items: Vec<String>,
     input_purpose: InputPurpose,
+    last_docker_refresh: Instant,
+    /// The dashboard list's last-rendered screen area, cached so mouse clicks
+    /// can be hit-tested against it without re-computing the layout.
+    last_dashboard_area: Rect,
+    /// Selected row in the Running panel (`Focus::Running`).
+    running_selected: usize,
+    /// Sends chat turns to the persistent background worker (see
+    /// `spawn_chat_worker`); replies come back on `rx` as `ProcEvent::ChatReply`.
+    chat_tx: Sender<ChatRequest>,
 }
 
 impl AppState {
-    fn new(repo_root: Option<std::path::PathBuf>) -> Self {
+    fn new(repo_root: Option<std::path::PathBuf>, loaded: LoadedConfig) -> Self {
         let (tx, rx) = mpsc::channel::<ProcEvent>();
+        let chat_tx = spawn_chat_worker(loaded, tx.clone());
 
         let log_file = open_session_log(&repo_root);
 
@@ -150,6 +190,10 @@ impl AppState {
             selected_model: None,
             model_items: Vec::new(),
             input_purpose: InputPurpose::None,
+            last_docker_refresh: Instant::now(),
+            last_dashboard_area: Rect::default(),
+            running_selected: 0,
+            chat_tx,
         };
 
         app.refresh_ui();
@@ -262,6 +306,22 @@ impl AppState {
         }
     }
 
+    /// Scroll the CLI Output panel by a single line (mouse wheel granularity),
+    /// as opposed to `output_page_up`/`down`'s full-page jump.
+    fn output_line_up(&mut self) {
+        self.follow_output = false;
+        self.output_scroll = self.output_scroll.saturating_sub(1);
+    }
+
+    fn output_line_down(&mut self) {
+        let max_scroll = self.max_output_scroll();
+        self.output_scroll = self.output_scroll.saturating_add(1).min(max_scroll);
+        if self.output_scroll >= max_scroll {
+            self.follow_output = true;
+            self.output_scroll = max_scroll;
+        }
+    }
+
     fn set_menu(&mut self, menu: MenuKind) {
         self.menu = menu;
         // The model-selection menu is built dynamically from `model_items`;
@@ -290,6 +350,28 @@ impl AppState {
             MenuKind::RunWin11Ai
         } else {
             MenuKind::RunUbuntu22Ai
+        }
+    }
+
+    /// The menu one level up from the current one, mirroring the targets of
+    /// each menu's own "< Back to ..." item. `None` means the current menu is
+    /// the Dashboard root, so there is nowhere further to go back to.
+    fn parent_menu(&self) -> Option<MenuKind> {
+        match self.menu {
+            MenuKind::Root => None,
+            MenuKind::RunUbuntu22 | MenuKind::RunWin11 => Some(MenuKind::Root),
+            MenuKind::RunUbuntu22Network
+            | MenuKind::RunUbuntu22Dependencies
+            | MenuKind::RunUbuntu22Github
+            | MenuKind::RunUbuntu22Open
+            | MenuKind::RunUbuntu22Ai => Some(MenuKind::RunUbuntu22),
+            MenuKind::RunWin11Network
+            | MenuKind::RunWin11Dependencies
+            | MenuKind::RunWin11Github
+            | MenuKind::RunWin11Open
+            | MenuKind::RunWin11Ai
+            | MenuKind::RunWin11Dotfiles => Some(MenuKind::RunWin11),
+            MenuKind::SelectModel => Some(self.ai_back_menu()),
         }
     }
 
@@ -340,6 +422,72 @@ impl AppState {
         }
     }
 
+    fn running_next(&mut self) {
+        if !self.running.is_empty() {
+            self.running_selected = (self.running_selected + 1) % self.running.len();
+        }
+    }
+
+    fn running_previous(&mut self) {
+        if self.running.is_empty() {
+            return;
+        }
+        if self.running_selected == 0 {
+            self.running_selected = self.running.len() - 1;
+        } else {
+            self.running_selected -= 1;
+        }
+    }
+
+    /// Kill just the selected process in the Running panel (as opposed to
+    /// `kill_all_running`, which stops everything).
+    fn kill_selected_running(&mut self) {
+        if self.running.is_empty() {
+            self.push_log(LogEntry::Info(
+                "[INFO] No running processes to stop.".to_string(),
+            ));
+            self.trim_logs();
+            return;
+        }
+        if self.running_selected >= self.running.len() {
+            self.running_selected = self.running.len() - 1;
+        }
+        let mut proc = self.running.remove(self.running_selected);
+        let _ = proc.child.kill();
+        if self.running_selected >= self.running.len() && self.running_selected > 0 {
+            self.running_selected -= 1;
+        }
+        self.push_log(LogEntry::Info(format!("[INFO] Stopped '{}'.", proc.label)));
+        self.trim_logs();
+    }
+
+    /// Handle a left-click at terminal coordinates `(col, row)`: if it lands
+    /// on a dashboard row, select and run it (mirrors Up/Down + Enter). Safe
+    /// to one-click even for destructive items since those now require
+    /// typing "yes" to confirm.
+    fn click_dashboard_row(&mut self, col: u16, row: u16) {
+        let area = self.last_dashboard_area;
+        if area.width < 2 || area.height < 2 {
+            return;
+        }
+        let inner_x0 = area.x + 1;
+        let inner_x1 = area.x + area.width - 1;
+        let inner_y0 = area.y + 1;
+        let inner_y1 = area.y + area.height - 1;
+        if col < inner_x0 || col >= inner_x1 || row < inner_y0 || row >= inner_y1 {
+            return;
+        }
+
+        let index = (row - inner_y0) as usize;
+        if index >= self.item_count() {
+            return;
+        }
+
+        self.focus = Focus::Dashboard;
+        self.selected = index;
+        self.activate_selected();
+    }
+
     fn activate_selected(&mut self) {
         // The model-selection menu is dynamic and has no CommandItem entries;
         // handle picking a model (or the empty placeholder) up front.
@@ -384,7 +532,8 @@ impl AppState {
                         ));
                     } else {
                         self.push_log(LogEntry::Info(
-                            "[INFO] Non-Windows host: use vn run ubuntu22 submenu items.".to_string(),
+                            "[INFO] Non-Windows host: use vn run ubuntu22 submenu items."
+                                .to_string(),
                         ));
                     }
                     self.trim_logs();
@@ -395,22 +544,33 @@ impl AppState {
                 self.push_log(LogEntry::Info("[INFO] Opened submenu.".to_string()));
                 self.set_menu(next_menu);
                 self.trim_logs();
-                return;
             }
             Action::BackToRoot => {
                 self.push_log(LogEntry::Command(item.label.to_string()));
                 self.push_log(LogEntry::Info("[INFO] Returned to Dashboard.".to_string()));
                 self.set_menu(MenuKind::Root);
                 self.trim_logs();
-                return;
             }
             Action::Execute(args) => {
                 let args = args.into_iter().map(String::from).collect();
                 self.spawn_process(item.label, args);
             }
+            Action::ExecuteConfirm(args) => {
+                self.push_log(LogEntry::Command(item.label.to_string()));
+                self.push_log(LogEntry::Error(format!(
+                    "[WARNING] This will run '{}'. Type 'yes' and press Enter to confirm, or Tab to cancel.",
+                    item.label
+                )));
+                self.input_purpose = InputPurpose::ConfirmDestructive(args, item.label);
+                self.focus = Focus::Input;
+                self.input.clear();
+                self.trim_logs();
+            }
             Action::OpenModelMenu => {
                 self.push_log(LogEntry::Command(item.label.to_string()));
-                self.push_log(LogEntry::Info("[INFO] Loading installed models...".to_string()));
+                self.push_log(LogEntry::Info(
+                    "[INFO] Loading installed models...".to_string(),
+                ));
                 self.load_models_into_menu();
                 if self.model_items.is_empty() {
                     self.push_log(LogEntry::Info(
@@ -427,11 +587,10 @@ impl AppState {
                 self.trim_logs();
             }
             Action::ArmInput(purpose) => {
-                self.input_purpose = purpose;
                 self.focus = Focus::Input;
                 self.input.clear();
                 self.push_log(LogEntry::Command(item.label.to_string()));
-                match purpose {
+                match &purpose {
                     InputPurpose::DownloadModel => self.push_log(LogEntry::Info(
                         "[INFO] Type a model name (e.g. llama3.2) and press Enter to download. Tab returns to the dashboard."
                             .to_string(),
@@ -446,8 +605,9 @@ impl AppState {
                             model
                         )));
                     }
-                    InputPurpose::None => {}
+                    InputPurpose::None | InputPurpose::ConfirmDestructive(..) => {}
                 }
+                self.input_purpose = purpose;
                 self.trim_logs();
             }
         }
@@ -480,7 +640,7 @@ impl AppState {
             .stderr(Stdio::piped())
             .stdin(Stdio::null());
 
-        let mut child = match cmd.spawn() {
+        let mut child = match cmd.group_spawn() {
             Ok(c) => c,
             Err(err) => {
                 self.push_log(LogEntry::Error(format!(
@@ -492,8 +652,8 @@ impl AppState {
             }
         };
 
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
+        let stdout = child.inner().stdout.take();
+        let stderr = child.inner().stderr.take();
 
         if let Some(mut out) = stdout {
             let tx_out = self.tx.clone();
@@ -539,6 +699,7 @@ impl AppState {
         self.running.push(RunningProcess {
             label: label.to_string(),
             child,
+            started_at: Instant::now(),
         });
         self.trim_logs();
     }
@@ -550,7 +711,7 @@ impl AppState {
             return;
         }
 
-        match self.input_purpose {
+        match self.input_purpose.clone() {
             InputPurpose::DownloadModel => {
                 self.spawn_process(
                     "vn ai pull",
@@ -563,16 +724,27 @@ impl AppState {
             InputPurpose::Chat => {
                 let model = self.selected_model.clone();
                 self.push_log(LogEntry::Command(format!("You: {}", text)));
-                let mut args = vec!["ai".to_string(), "chat".to_string()];
-                args.push("--session".to_string());
-                args.push("tui".to_string());
-                if let Some(model) = model {
-                    args.push("--model".to_string());
-                    args.push(model);
+                let request = ChatRequest {
+                    model,
+                    message: text,
+                };
+                if self.chat_tx.send(request).is_err() {
+                    self.push_log(LogEntry::Error(
+                        "[ERROR] Chat worker is not available.".to_string(),
+                    ));
+                } else {
+                    self.push_log(LogEntry::Info("[INFO] Waiting for reply...".to_string()));
                 }
-                args.push(text);
-                self.spawn_process("vn ai chat", args);
                 // Stay in chat mode so the conversation can continue.
+            }
+            InputPurpose::ConfirmDestructive(args, label) => {
+                if text.eq_ignore_ascii_case("yes") {
+                    self.spawn_process(label, args.into_iter().map(String::from).collect());
+                } else {
+                    self.push_log(LogEntry::Info(format!("[INFO] Cancelled: {}", label)));
+                }
+                self.input_purpose = InputPurpose::None;
+                self.focus = Focus::Dashboard;
             }
             InputPurpose::None => {
                 self.push_log(LogEntry::Info(
@@ -588,11 +760,19 @@ impl AppState {
     fn pump_process(&mut self) {
         while let Ok(event) = self.rx.try_recv() {
             match event {
-                ProcEvent::Stdout(chunk) => {
-                    self.extend_log(split_to_entries(chunk, false).into_iter().map(LogEntry::Stdout))
-                }
-                ProcEvent::Stderr(chunk) => {
-                    self.extend_log(split_to_entries(chunk, true).into_iter().map(LogEntry::Stderr))
+                ProcEvent::Stdout(chunk) => self.extend_log(
+                    split_to_entries(chunk, false)
+                        .into_iter()
+                        .map(LogEntry::Stdout),
+                ),
+                ProcEvent::Stderr(chunk) => self.extend_log(
+                    split_to_entries(chunk, true)
+                        .into_iter()
+                        .map(LogEntry::Stderr),
+                ),
+                ProcEvent::ChatReply(Ok(text)) => self.push_log(LogEntry::Stdout(text)),
+                ProcEvent::ChatReply(Err(err)) => {
+                    self.push_log(LogEntry::Error(format!("[ERROR] {}", err)))
                 }
             }
         }
@@ -641,24 +821,78 @@ impl AppState {
         self.running.clear();
     }
 
+    /// Kill every currently running background process without exiting the
+    /// TUI (e.g. to cancel a stuck `docker build` or `yt-dlp` job).
+    fn kill_all_running(&mut self) {
+        let count = self.running.len();
+        if count == 0 {
+            self.push_log(LogEntry::Info(
+                "[INFO] No running processes to stop.".to_string(),
+            ));
+            self.trim_logs();
+            return;
+        }
+        for proc in &mut self.running {
+            let _ = proc.child.kill();
+        }
+        self.running.clear();
+        self.push_log(LogEntry::Info(format!(
+            "[INFO] Stopped {} running process(es).",
+            count
+        )));
+        self.trim_logs();
+    }
+
+    /// Scroll the CLI Output panel up to the nearest Error/Stderr entry above
+    /// the current view. Repeated presses walk further back through earlier
+    /// errors; cheaper than a full search box for "did the last command fail".
+    fn jump_to_previous_error(&mut self) {
+        if self.logs.is_empty() {
+            return;
+        }
+        let search_end = (self.output_scroll as usize).min(self.logs.len());
+        let found = self.logs[..search_end]
+            .iter()
+            .rposition(|entry| matches!(entry, LogEntry::Error(_) | LogEntry::Stderr(_)));
+
+        let Some(idx) = found else {
+            self.push_log(LogEntry::Info(
+                "[INFO] No earlier errors found.".to_string(),
+            ));
+            self.trim_logs();
+            return;
+        };
+
+        self.follow_output = false;
+        let above = (self.output_view_lines.saturating_sub(1)) as u16;
+        self.output_scroll = (idx as u16).saturating_sub(above);
+        self.clamp_output_scroll();
+    }
+
     fn trim_logs(&mut self) {
         if self.logs.len() > 200 {
             let overflow = self.logs.len() - 200;
             self.logs.drain(0..overflow);
         }
 
-        let max_scroll = self.max_output_scroll();
-
         if self.logs.len() != self.last_log_count {
             self.last_log_count = self.logs.len();
             self.follow_output = true;
         }
 
-        if self.follow_output {
-            self.output_scroll = max_scroll;
-        } else if self.output_scroll > max_scroll {
-            self.output_scroll = max_scroll;
-        }
+        self.clamp_output_scroll();
+    }
+
+    /// Keep `output_scroll` pinned to the bottom when following, or clamped to
+    /// the valid range otherwise. Shared by `trim_logs()` and the render loop
+    /// (whose `output_view_lines` changes with terminal size).
+    fn clamp_output_scroll(&mut self) {
+        let max_scroll = self.max_output_scroll();
+        self.output_scroll = if self.follow_output {
+            max_scroll
+        } else {
+            self.output_scroll.min(max_scroll)
+        };
     }
 }
 
@@ -669,9 +903,7 @@ impl AppState {
 /// Returns `None` if the log cannot be opened; the TUI then runs without
 /// file logging rather than failing.
 fn open_session_log(repo_root: &Option<std::path::PathBuf>) -> Option<std::fs::File> {
-    let base = repo_root
-        .clone()
-        .or_else(|| env::current_dir().ok())?;
+    let base = repo_root.clone().or_else(|| env::current_dir().ok())?;
     let dir = base.join("logs");
     std::fs::create_dir_all(&dir).ok()?;
 
@@ -688,6 +920,89 @@ fn open_session_log(repo_root: &Option<std::path::PathBuf>) -> Option<std::fs::F
     let _ = file.flush();
 
     Some(file)
+}
+
+/// Spawn a persistent background worker that owns the Ollama client and chat
+/// session for the TUI's Chat feature. Replaces the old design of re-spawning
+/// `vn ai chat` as a subprocess per message: that re-created the Ollama client
+/// and re-read/re-parsed the whole session file from disk on every turn. This
+/// worker builds the client and loads the session once, then keeps both in
+/// memory for the life of the TUI, appending to (and saving) the session file
+/// after each reply. Returns the `Sender` used to submit chat turns; replies
+/// come back on `tx` as `ProcEvent::ChatReply`.
+fn spawn_chat_worker(loaded: LoadedConfig, tx: Sender<ProcEvent>) -> Sender<ChatRequest> {
+    let (req_tx, req_rx) = mpsc::channel::<ChatRequest>();
+
+    thread::spawn(move || {
+        let rt = match tokio::runtime::Runtime::new() {
+            Ok(rt) => rt,
+            Err(err) => {
+                let _ = tx.send(ProcEvent::ChatReply(Err(format!(
+                    "failed to start chat runtime: {err}"
+                ))));
+                return;
+            }
+        };
+
+        let sessions_dir = expand_tilde(&loaded.config.sessions.dir);
+        let path = session_path(&sessions_dir, "tui");
+        let mut session = match SessionFile::load_or_new(&path, "tui") {
+            Ok(s) => s,
+            Err(err) => {
+                let _ = tx.send(ProcEvent::ChatReply(Err(format!(
+                    "failed to load chat session: {err}"
+                ))));
+                return;
+            }
+        };
+
+        let ollama = crate::commands::ai::build_client(&loaded.config.ollama.host);
+        let default_model = loaded.config.ollama.model.clone();
+        let system_prompt = loaded.config.prompts.system.clone();
+
+        while let Ok(req) = req_rx.recv() {
+            let model = req.model.unwrap_or_else(|| default_model.clone());
+
+            let mut messages: Vec<ChatMessage> = Vec::new();
+            if let Some(system) = &system_prompt {
+                messages.push(ChatMessage::system(system.clone()));
+            }
+            for msg in &session.messages {
+                match msg.role.as_str() {
+                    "user" => messages.push(ChatMessage::user(msg.content.clone())),
+                    "assistant" => messages.push(ChatMessage::assistant(msg.content.clone())),
+                    "system" => messages.push(ChatMessage::system(msg.content.clone())),
+                    _ => {}
+                }
+            }
+            messages.push(ChatMessage::user(req.message.clone()));
+
+            let request = ChatMessageRequest::new(model.clone(), messages);
+            let result = rt.block_on(ollama.send_chat_messages(request));
+
+            match result {
+                Ok(response) => {
+                    let reply = response.message.content;
+                    session.append_user(req.message);
+                    session.append_assistant(reply.clone());
+                    if let Err(err) = session.save(&path) {
+                        let _ = tx.send(ProcEvent::ChatReply(Err(format!(
+                            "reply received but failed to save session: {err}"
+                        ))));
+                        continue;
+                    }
+                    let _ = tx.send(ProcEvent::ChatReply(Ok(format!("{}: {}", model, reply))));
+                }
+                Err(err) => {
+                    let _ = tx.send(ProcEvent::ChatReply(Err(format!(
+                        "chat request to Ollama failed: {err}"
+                    ))));
+                }
+            }
+        }
+    });
+
+    req_tx
 }
 
 fn split_to_entries(chunk: String, is_stderr: bool) -> Vec<String> {
@@ -752,11 +1067,7 @@ fn extract_host_ports(line: &str) -> Vec<String> {
             let host_segment = mapped.rsplit(':').next().unwrap_or("").trim();
             let host_port = host_segment.split('/').next().unwrap_or("").trim();
 
-            if !host_port.is_empty()
-                && host_port
-                    .chars()
-                    .all(|c| c.is_ascii_digit() || c == '-')
-            {
+            if !host_port.is_empty() && host_port.chars().all(|c| c.is_ascii_digit() || c == '-') {
                 Some(host_port.to_string())
             } else {
                 None
@@ -837,6 +1148,10 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
                 action: Action::Execute(vec!["run", "ubuntu22-check-internet"]),
             },
             CommandItem {
+                label: "vn run ubuntu22-check-peripherals",
+                action: Action::Execute(vec!["run", "ubuntu22-check-peripherals"]),
+            },
+            CommandItem {
                 label: "< Back to ubuntu22",
                 action: Action::OpenMenu(MenuKind::RunUbuntu22),
             },
@@ -876,15 +1191,15 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
             },
             CommandItem {
                 label: "vn docker stop-all",
-                action: Action::Execute(vec!["docker", "stop-all"]),
+                action: Action::ExecuteConfirm(vec!["docker", "stop-all"]),
             },
             CommandItem {
                 label: "vn docker remove-containers",
-                action: Action::Execute(vec!["docker", "remove-containers"]),
+                action: Action::ExecuteConfirm(vec!["docker", "remove-containers"]),
             },
             CommandItem {
                 label: "vn docker remove-images",
-                action: Action::Execute(vec!["docker", "remove-images"]),
+                action: Action::ExecuteConfirm(vec!["docker", "remove-images"]),
             },
             CommandItem {
                 label: "vn app open docs",
@@ -1032,15 +1347,15 @@ fn menu_items(menu: MenuKind) -> Vec<CommandItem> {
             },
             CommandItem {
                 label: "vn docker stop-all",
-                action: Action::Execute(vec!["docker", "stop-all"]),
+                action: Action::ExecuteConfirm(vec!["docker", "stop-all"]),
             },
             CommandItem {
                 label: "vn docker remove-containers",
-                action: Action::Execute(vec!["docker", "remove-containers"]),
+                action: Action::ExecuteConfirm(vec!["docker", "remove-containers"]),
             },
             CommandItem {
                 label: "vn docker remove-images",
-                action: Action::Execute(vec!["docker", "remove-images"]),
+                action: Action::ExecuteConfirm(vec!["docker", "remove-images"]),
             },
             CommandItem {
                 label: "vn app open docs",
@@ -1138,10 +1453,7 @@ fn panel_block(title: &str, focused: bool) -> Block<'static> {
                 .add_modifier(Modifier::BOLD),
         )
     } else {
-        (
-            Style::default().fg(DIM),
-            Style::default().fg(MUTED),
-        )
+        (Style::default().fg(DIM), Style::default().fg(MUTED))
     };
     Block::default()
         .borders(Borders::ALL)
@@ -1155,10 +1467,13 @@ fn plain_block(title: String) -> Block<'static> {
     Block::default()
         .borders(Borders::ALL)
         .border_style(Style::default().fg(DIM))
-        .title(Span::styled(format!(" {} ", title), Style::default().fg(MUTED)))
+        .title(Span::styled(
+            format!(" {} ", title),
+            Style::default().fg(MUTED),
+        ))
 }
 
-pub fn run(repo_root: Option<std::path::PathBuf>) -> Result<()> {
+pub fn run(repo_root: Option<std::path::PathBuf>, loaded: LoadedConfig) -> Result<()> {
     if let Some(repo_root) = &repo_root {
         env::set_var("VECNODE_REPO_ROOT", repo_root);
         env::set_current_dir(repo_root)?;
@@ -1166,15 +1481,15 @@ pub fn run(repo_root: Option<std::path::PathBuf>) -> Result<()> {
 
     let mut stdout = io::stdout();
     enable_raw_mode()?;
-    execute!(stdout, EnterAlternateScreen)?;
+    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let result = event_loop(&mut terminal, repo_root);
+    let result = event_loop(&mut terminal, repo_root, loaded);
 
     disable_raw_mode()?;
-    io::stdout().execute(LeaveAlternateScreen)?;
+    execute!(io::stdout(), DisableMouseCapture, LeaveAlternateScreen)?;
     terminal.show_cursor()?;
 
     result
@@ -1183,64 +1498,98 @@ pub fn run(repo_root: Option<std::path::PathBuf>) -> Result<()> {
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     repo_root: Option<std::path::PathBuf>,
+    loaded: LoadedConfig,
 ) -> Result<()> {
-    let mut app = AppState::new(repo_root);
+    let mut app = AppState::new(repo_root, loaded);
+    const DOCKER_REFRESH_INTERVAL: Duration = Duration::from_secs(4);
 
     loop {
         app.pump_process();
 
+        if app.last_docker_refresh.elapsed() >= DOCKER_REFRESH_INTERVAL {
+            app.refresh_docker_panel();
+            app.last_docker_refresh = Instant::now();
+        }
+
         if event::poll(Duration::from_millis(250))? {
             match event::read()? {
                 Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                    KeyCode::Esc => {
-                        app.shutdown();
-                        break;
-                    }
-                    KeyCode::Char('q') if matches!(app.focus, Focus::Dashboard) => {
+                    KeyCode::Esc => match app.focus {
+                        Focus::Input => {
+                            app.input.clear();
+                            app.input_purpose = InputPurpose::None;
+                            app.focus = Focus::Dashboard;
+                        }
+                        Focus::Running => {
+                            app.focus = Focus::Dashboard;
+                        }
+                        Focus::Dashboard => {
+                            if let Some(parent) = app.parent_menu() {
+                                app.set_menu(parent);
+                            } else {
+                                app.shutdown();
+                                break;
+                            }
+                        }
+                    },
+                    KeyCode::Char('q') if !matches!(app.focus, Focus::Input) => {
                         app.shutdown();
                         break;
                     }
                     KeyCode::Tab => {
                         app.focus = match app.focus {
-                            Focus::Dashboard => Focus::Input,
+                            Focus::Dashboard => Focus::Running,
+                            Focus::Running => Focus::Input,
                             Focus::Input => Focus::Dashboard,
                         }
                     }
-                    KeyCode::Down => {
-                        if matches!(app.focus, Focus::Dashboard) {
+                    KeyCode::Down => match app.focus {
+                        Focus::Dashboard => app.next(),
+                        Focus::Running => app.running_next(),
+                        Focus::Input => {}
+                    },
+                    KeyCode::Up => match app.focus {
+                        Focus::Dashboard => app.previous(),
+                        Focus::Running => app.running_previous(),
+                        Focus::Input => {}
+                    },
+                    KeyCode::Char('j') if !matches!(app.focus, Focus::Input) => {
+                        if matches!(app.focus, Focus::Running) {
+                            app.running_next();
+                        } else {
                             app.next();
                         }
                     }
-                    KeyCode::Up => {
-                        if matches!(app.focus, Focus::Dashboard) {
+                    KeyCode::Char('k') if !matches!(app.focus, Focus::Input) => {
+                        if matches!(app.focus, Focus::Running) {
+                            app.running_previous();
+                        } else {
                             app.previous();
                         }
                     }
-                    KeyCode::Char('j') if matches!(app.focus, Focus::Dashboard) => {
-                        app.next();
+                    KeyCode::Char('x') if !matches!(app.focus, Focus::Input) => {
+                        app.kill_all_running();
                     }
-                    KeyCode::Char('k') if matches!(app.focus, Focus::Dashboard) => {
-                        app.previous();
+                    KeyCode::Char('e') if !matches!(app.focus, Focus::Input) => {
+                        app.jump_to_previous_error();
                     }
-                    KeyCode::Char(',') if matches!(app.focus, Focus::Dashboard) => {
+                    KeyCode::Char(',') if !matches!(app.focus, Focus::Input) => {
                         app.output_page_up();
                     }
-                    KeyCode::Char('.') if matches!(app.focus, Focus::Dashboard) => {
+                    KeyCode::Char('.') if !matches!(app.focus, Focus::Input) => {
                         app.output_page_down();
                     }
                     KeyCode::Char('r') | KeyCode::Char('R')
-                        if matches!(app.focus, Focus::Dashboard) =>
+                        if !matches!(app.focus, Focus::Input) =>
                     {
                         app.refresh_ui();
                         terminal.clear()?;
                     }
-                    KeyCode::Enter => {
-                        if matches!(app.focus, Focus::Dashboard) {
-                            app.activate_selected();
-                        } else {
-                            app.send_input_line();
-                        }
-                    }
+                    KeyCode::Enter => match app.focus {
+                        Focus::Dashboard => app.activate_selected(),
+                        Focus::Running => app.kill_selected_running(),
+                        Focus::Input => app.send_input_line(),
+                    },
                     KeyCode::Backspace => {
                         if matches!(app.focus, Focus::Input) {
                             app.input.pop();
@@ -1250,6 +1599,14 @@ fn event_loop(
                         if matches!(app.focus, Focus::Input) {
                             app.input.push(c);
                         }
+                    }
+                    _ => {}
+                },
+                Event::Mouse(mouse) => match mouse.kind {
+                    MouseEventKind::ScrollUp => app.output_line_up(),
+                    MouseEventKind::ScrollDown => app.output_line_down(),
+                    MouseEventKind::Down(MouseButton::Left) => {
+                        app.click_dashboard_row(mouse.column, mouse.row);
                     }
                     _ => {}
                 },
@@ -1274,8 +1631,10 @@ fn event_loop(
             let active_model = app.selected_model.clone().unwrap_or_else(|| "none".to_string());
             let today = Local::now().format("%Y-%m-%d");
             let header = Paragraph::new(format!(
-                "vecnode vn    |    AI model: {}    |    Date: {}",
-                active_model, today
+                "vecnode vn    |    AI model: {}    |    Date: {}    |    Running: {}",
+                active_model,
+                today,
+                app.running.len()
             ))
             .style(Style::default().fg(ACCENT).add_modifier(Modifier::BOLD))
             .block(plain_block("CLI".to_string()));
@@ -1287,8 +1646,14 @@ fn event_loop(
 
             let left_panels = Layout::default()
                 .direction(Direction::Vertical)
-                .constraints([Constraint::Percentage(50), Constraint::Percentage(50)])
+                .constraints([
+                    Constraint::Percentage(40),
+                    Constraint::Percentage(30),
+                    Constraint::Percentage(30),
+                ])
                 .split(middle[0]);
+
+            app.last_dashboard_area = left_panels[0];
 
             // The model menu lists installed models (or a placeholder); every
             // other menu lists its CommandItem labels.
@@ -1373,6 +1738,42 @@ fn event_loop(
                     )),
             );
 
+            let running_focused = matches!(app.focus, Focus::Running);
+            let running_items: Vec<ListItem> = if app.running.is_empty() {
+                vec![ListItem::new(Line::from(Span::styled(
+                    "(no running processes)",
+                    Style::default().fg(MUTED),
+                )))]
+            } else {
+                app.running
+                    .iter()
+                    .enumerate()
+                    .map(|(idx, proc)| {
+                        let text = format!(
+                            "{}  ({}s)",
+                            proc.label,
+                            proc.started_at.elapsed().as_secs()
+                        );
+                        if running_focused && idx == app.running_selected {
+                            ListItem::new(Line::from(Span::styled(
+                                text,
+                                Style::default()
+                                    .fg(Color::Black)
+                                    .bg(ACCENT)
+                                    .add_modifier(Modifier::BOLD),
+                            )))
+                        } else {
+                            ListItem::new(Line::from(Span::styled(
+                                text,
+                                Style::default().fg(Color::White),
+                            )))
+                        }
+                    })
+                    .collect()
+            };
+            let running_panel =
+                List::new(running_items).block(panel_block("Running (Enter: kill)", running_focused));
+
             let log_lines: Vec<Line> = app
                 .logs
                 .iter()
@@ -1402,12 +1803,7 @@ fn event_loop(
                 .collect();
 
             app.output_view_lines = middle[1].height.saturating_sub(2) as usize;
-            let max_scroll = app.max_output_scroll();
-            if app.follow_output {
-                app.output_scroll = max_scroll;
-            } else if app.output_scroll > max_scroll {
-                app.output_scroll = max_scroll;
-            }
+            app.clamp_output_scroll();
 
             let output = Paragraph::new(log_lines)
                 .block(plain_block("CLI Output".to_string()))
@@ -1415,17 +1811,20 @@ fn event_loop(
 
             let keys_text = match app.focus {
                 Focus::Dashboard => {
-                    "Tab: input  Up/Down: select  Enter: run  R: refresh ui  ,/.: output page  q/Esc: exit"
+                    "Tab: running  Up/Down/click: select  Enter: run  R: refresh ui  ,/.: output page  x: stop all  e: last error  q: quit  Esc: back"
+                }
+                Focus::Running => {
+                    "Tab: input  Up/Down: select  Enter: kill selected  x: stop all  Esc: dashboard"
                 }
                 Focus::Input => {
-                    "Type to enter text  Tab: dashboard  Enter: send input  Backspace: delete  Esc: exit"
+                    "Type to enter text  Tab: dashboard  Enter: send input  Backspace: delete  Esc: cancel"
                 }
             };
 
             let input_text = if !app.input.is_empty() {
                 app.input.clone()
             } else {
-                match app.input_purpose {
+                match app.input_purpose.clone() {
                     InputPurpose::DownloadModel => {
                         "Type a model name to download, then Enter...".to_string()
                     }
@@ -1433,6 +1832,9 @@ fn event_loop(
                         "Message {} , then Enter...",
                         app.selected_model.clone().unwrap_or_else(|| "none".to_string())
                     ),
+                    InputPurpose::ConfirmDestructive(_, label) => {
+                        format!("Type 'yes' to confirm '{}', or Tab to cancel...", label)
+                    }
                     InputPurpose::None => "Type input for running command...".to_string(),
                 }
             };
@@ -1453,6 +1855,7 @@ fn event_loop(
             frame.render_widget(header, areas[0]);
             frame.render_stateful_widget(dashboard, left_panels[0], &mut list_state);
             frame.render_widget(docker, left_panels[1]);
+            frame.render_widget(running_panel, left_panels[2]);
             frame.render_widget(output, middle[1]);
             frame.render_widget(footer, areas[2]);
         })?;

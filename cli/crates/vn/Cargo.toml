@@ -7,6 +7,7 @@ description = "vecnode cross-platform CLI"
 [dependencies]
 anyhow = { workspace = true }
 clap = { workspace = true }
+command-group = "5.0"
 crossterm = { workspace = true }
 dirs = { workspace = true }
 futures-util = { workspace = true }

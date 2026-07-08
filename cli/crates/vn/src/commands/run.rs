@@ -24,14 +24,14 @@ pub fn run_named_script(name: &str, loaded: &LoadedConfig) -> Result<()> {
         bail!("script not found: {}", path.display());
     }
 
-    let status = run_script(&path).with_context(|| format!("failed running script: {}", path.display()))?;
+    let status =
+        run_script(&path).with_context(|| format!("failed running script: {}", path.display()))?;
     if !status.success() {
         return Err(anyhow!("script exited with status: {}", status));
     }
 
     Ok(())
 }
-
 
 /// Legacy script names now handled natively by `vn app` / `vn docker`.
 fn try_native(name: &str, loaded: &LoadedConfig) -> Option<Result<()>> {
@@ -158,6 +158,9 @@ fn map_script(name: &str) -> Result<ScriptTarget> {
         },
         "win11-check-peripherals" => ScriptTarget {
             relative_path: "scripts/win11/check_peripherals.bat",
+        },
+        "ubuntu22-check-peripherals" => ScriptTarget {
+            relative_path: "scripts/ubuntu22/check_peripherals.sh",
         },
         "win11-check-internet" => ScriptTarget {
             relative_path: "scripts/win11/check_internet.bat",
@@ -297,9 +300,7 @@ pub(crate) fn detect_repo_root(loaded: &LoadedConfig) -> Result<PathBuf> {
         }
     }
 
-    bail!(
-        "could not locate repository root. Run inside the vecnode repo or set VECNODE_REPO_ROOT"
-    )
+    bail!("could not locate repository root. Run inside the vecnode repo or set VECNODE_REPO_ROOT")
 }
 
 /// Validate that a path is a vecnode repository by checking for .git directory and scripts subdirectory.

@@ -23,22 +23,39 @@ repository.
 
 ## Rust CLI Security Practices
 
-### No Unsafe Code
+### Unsafe Code
 
-The `vn` CLI is written in 100% safe Rust; there are no `unsafe` blocks.
+The cross-platform command/TUI code (`main.rs`, `config.rs`, `commands/`, `tui/`) is
+100% safe Rust. The **Windows-only tray module** (`tray.rs`, `cfg(target_os =
+"windows")`) contains a small number of reviewed `unsafe` blocks around `windows-sys`
+FFI calls (`ShellExecuteW`, `LoadIconW`, `MessageBoxW`, `GetConsoleWindow`) needed to
+drive the system tray, show the UAC-elevated terminal, and hide the console window —
+there is no safe-Rust equivalent for these Win32 calls. It never runs on Linux and is
+excluded from the rest of the crate.
 
 **Verification:**
 ```bash
-grep -r "unsafe" cli/crates/vn/src/
-# Returns: (empty - no unsafe code)
+grep -rl "unsafe" cli/crates/vn/src/
+# Returns: cli/crates/vn/src/tray.rs (Windows-only FFI, see above)
 ```
+
+### Process Lifecycle
+
+Commands the TUI spawns in the background (`vn app open`, `vn run ...`, `vn ai pull`,
+etc.) run via the [`command-group`](https://crates.io/crates/command-group) crate
+instead of `std::process::Command::spawn()` directly, so each spawned command owns its
+own process group (Unix) / job object (Windows). Quitting the TUI or killing a running
+job also kills anything that command itself spawned (e.g. a `docker build` or
+`yt-dlp` invocation) instead of leaving it orphaned in the background.
 
 ### Dependency Auditing
 
 - **`cargo audit`** scans `Cargo.lock` against the RustSec Advisory Database.
 - **`cargo deny`** (see [cli/deny.toml](cli/deny.toml)) warns on unmaintained
   crates and non-permissive licenses, and bans `openssl` in favor of rustls.
-- There is currently **no CI**; run both tools manually before releases.
+- Both now run in CI on every push/PR to `main`
+  ([.github/workflows/ci.yml](.github/workflows/ci.yml)), alongside `cargo fmt --check`,
+  `cargo clippy -D warnings`, and `cargo build --locked` on Ubuntu and Windows.
 
 ### Pinned Dependencies
 
@@ -53,6 +70,7 @@ Current direct dependencies (see [cli/Cargo.toml](cli/Cargo.toml)):
 |-------|---------|---------|
 | `anyhow` | 1.0 | Error handling |
 | `clap` | 4.5 | CLI argument parsing |
+| `command-group` | 5.0 | Process-group/job-object kill for spawned commands (see Process Lifecycle) |
 | `crossterm` / `ratatui` | 0.28 | Terminal UI |
 | `dirs` | 5.0 | Config/data paths |
 | `ollama-rs` | 0.3 | Ollama client for `vn ai` |
@@ -120,7 +138,7 @@ Per-app threat model:
 |-----|------|--------|-------|
 | library-portal | 8090 | `library/` read-write | Unauthenticated UI that can rename/move/delete PDFs - safe only because it is loopback-bound. State kept in `library/.portal/`. |
 | doc-processor | 8085/8086 | host Desktop read-write | pandoc/tectonic markdown-to-PDF + pypdf join; output confined to the Desktop mount. |
-| media-downloader | 8095 | host Desktop read-write | Fetches **untrusted URLs** (yt-dlp): http/https only, hosts resolving to loopback/private/link-local ranges are refused (SSRF guard), `--ignore-config --restrict-filenames --no-exec --max-filesize`, sanitized traversal-checked collision-safe output names. Known limit: a public URL redirecting to a private IP is not caught. |
+| media-downloader | 8095 | host Desktop read-write | Fetches **untrusted URLs** (yt-dlp): http/https only, an initial fast-fail check rejects hosts resolving to loopback/private/link-local ranges, and **every connection yt-dlp itself makes is routed through an in-container egress-guard proxy** (`start_egress_proxy` in `docker/media-downloader/app.py`) that re-resolves and re-validates the target at actual connect time — this catches redirects to a different (private) host and DNS-rebinding between the initial check and yt-dlp's own lookup, not just the initial URL. Also: `--ignore-config --restrict-filenames --no-exec --max-filesize`, sanitized traversal-checked collision-safe output names. |
 | SilverBullet / Stirling-PDF / docs | 3000/8080 | space/none | Pulled published images (docs is local). SilverBullet uses a default `SB_USER=user:password` credential and Stirling-PDF's login page is disabled (`SECURITY_ENABLELOGIN=false`) - both acceptable only while loopback-bound; change them before any wider exposure. |
 
 Image supply chain: base images are pinned tags (`debian:12-slim`,

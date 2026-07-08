@@ -78,10 +78,10 @@ fn status(root: Option<PathBuf>) -> Result<()> {
 
 fn discover_repos(root: Option<PathBuf>) -> Result<Vec<PathBuf>> {
     let root = root.unwrap_or_else(default_repos_root);
-    
+
     // Validate the root path to prevent directory traversal
     validate_path_for_repo_discovery(&root)?;
-    
+
     let mut repos = Vec::new();
 
     if is_repo(&root) {
@@ -123,7 +123,10 @@ fn is_repo(path: &Path) -> bool {
 /// Rejects paths with ".." components to prevent directory traversal attacks.
 fn validate_path_for_repo_discovery(path: &Path) -> Result<()> {
     // Reject paths containing ".." components
-    if path.components().any(|c| c == std::path::Component::ParentDir) {
+    if path
+        .components()
+        .any(|c| c == std::path::Component::ParentDir)
+    {
         return Err(anyhow::anyhow!(
             "path traversal detected in git root: {}. Using '..' is not allowed.",
             path.display()

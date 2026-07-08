@@ -59,9 +59,10 @@ pub fn load_or_init(override_path: Option<PathBuf>) -> Result<LoadedConfig> {
     let path = override_path.unwrap_or_else(default_config_path);
 
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("failed to create config dir: {}", parent.display()))?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create config dir: {}", parent.display()))?;
         // Set directory permissions to 0o700 (user only) on Unix
-        set_dir_permissions(&parent)?;
+        set_dir_permissions(parent)?;
     }
 
     let config = if path.exists() {
@@ -71,7 +72,8 @@ pub fn load_or_init(override_path: Option<PathBuf>) -> Result<LoadedConfig> {
             .with_context(|| format!("failed to parse config file: {}", path.display()))?
     } else {
         let cfg = AppConfig::default();
-        let toml_content = toml::to_string_pretty(&cfg).context("failed to serialize default config")?;
+        let toml_content =
+            toml::to_string_pretty(&cfg).context("failed to serialize default config")?;
         fs::write(&path, toml_content)
             .with_context(|| format!("failed to write default config: {}", path.display()))?;
         // Set file permissions to 0o600 (user only) on Unix
@@ -117,8 +119,12 @@ pub fn expand_tilde(input: &str) -> PathBuf {
 #[cfg(unix)]
 fn set_file_permissions(path: &Path) -> Result<()> {
     let perms = fs::Permissions::from_mode(0o600);
-    fs::set_permissions(path, perms)
-        .with_context(|| format!("failed to set file permissions (0o600) for: {}", path.display()))?;
+    fs::set_permissions(path, perms).with_context(|| {
+        format!(
+            "failed to set file permissions (0o600) for: {}",
+            path.display()
+        )
+    })?;
     Ok(())
 }
 
@@ -134,8 +140,12 @@ fn set_file_permissions(_path: &Path) -> Result<()> {
 #[cfg(unix)]
 fn set_dir_permissions(path: &Path) -> Result<()> {
     let perms = fs::Permissions::from_mode(0o700);
-    fs::set_permissions(path, perms)
-        .with_context(|| format!("failed to set directory permissions (0o700) for: {}", path.display()))?;
+    fs::set_permissions(path, perms).with_context(|| {
+        format!(
+            "failed to set directory permissions (0o700) for: {}",
+            path.display()
+        )
+    })?;
     Ok(())
 }
 
