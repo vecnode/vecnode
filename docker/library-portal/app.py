@@ -199,21 +199,25 @@ PAGE = """<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Library</title>
 <style>
-:root{{--bg:#F0EEE6;--surface:#FBFAF7;--ink:#181614;--muted:#73706A;--accent:#0EA5E9;--accent-tint:#E1F1FB;--line:#E4E0D6;}}
+:root{{
+  --bg:#f7f6f2;--surface:#ffffff;--surface-soft:#fbfaf7;--ink:#1f1f1a;
+  --muted:#66655f;--line:#dfddd5;--line-strong:#cdcabf;
+  --accent:#1f6feb;--accent-tint:#eaf1fd;
+}}
 *{{box-sizing:border-box;}}
-body{{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased;}}
+body{{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI","Inter","Noto Sans","Helvetica Neue",Arial,sans-serif;line-height:1.5;-webkit-font-smoothing:antialiased;}}
 .wrap{{max-width:1040px;margin:0 auto;padding:48px 24px 96px;}}
-header h1{{font-family:Georgia,"Times New Roman",serif;font-weight:600;font-size:38px;margin:0 0 4px;letter-spacing:-.5px;}}
+header h1{{font-weight:600;font-size:32px;margin:0 0 4px;letter-spacing:-.01em;}}
 header p{{margin:0;color:var(--muted);font-size:15px;}}
 .controls{{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:26px 0 6px;}}
-.search{{flex:1 1 240px;padding:12px 15px;font-size:15px;background:var(--surface);border:1px solid var(--line);border-radius:10px;color:var(--ink);outline:none;}}
+.search{{flex:1 1 240px;padding:12px 15px;font-size:15px;background:var(--surface-soft);border:1px solid var(--line-strong);border-radius:10px;color:var(--ink);outline:none;}}
 .search:focus{{border-color:var(--accent);}}
-select,.toggle button{{padding:11px 13px;font-size:14px;background:var(--surface);border:1px solid var(--line);border-radius:10px;color:var(--ink);cursor:pointer;}}
-.toggle{{display:inline-flex;border:1px solid var(--line);border-radius:10px;overflow:hidden;}}
-.toggle button{{border:none;border-radius:0;background:var(--surface);}}
+select,.toggle button{{padding:11px 13px;font-size:14px;background:var(--surface-soft);border:1px solid var(--line-strong);border-radius:10px;color:var(--ink);cursor:pointer;}}
+.toggle{{display:inline-flex;border:1px solid var(--line-strong);border-radius:10px;overflow:hidden;}}
+.toggle button{{border:none;border-radius:0;background:var(--surface-soft);}}
 .toggle button.active{{background:var(--accent);color:#fff;}}
 .pathbar{{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0 4px;}}
-.pathbar input{{flex:0 1 260px;padding:8px 11px;font-size:13.5px;background:var(--surface);border:1px solid var(--line);border-radius:9px;color:var(--ink);outline:none;}}
+.pathbar input{{flex:0 1 260px;padding:8px 11px;font-size:13.5px;background:var(--surface-soft);border:1px solid var(--line-strong);border-radius:9px;color:var(--ink);outline:none;}}
 .pathbar input:focus{{border-color:var(--accent);}}
 .pathbar .btn{{padding:8px 11px;font-size:13.5px;}}
 .crumbs{{flex:1 1 auto;font-size:14px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}}
@@ -262,13 +266,13 @@ footer{{color:var(--muted);font-size:12px;margin-top:30px;text-align:center;}}
 /* modal */
 .backdrop{{position:fixed;inset:0;background:rgba(24,22,20,.34);display:none;align-items:center;justify-content:center;padding:20px;z-index:9;}}
 .backdrop.show{{display:flex;}}
-.modal{{background:var(--surface);border:1px solid var(--line);border-radius:16px;width:100%;max-width:460px;padding:22px 22px 18px;}}
-.modal h3{{margin:0 0 14px;font-family:Georgia,serif;font-size:20px;}}
+.modal{{background:var(--surface);border:1px solid var(--line);border-radius:12px;width:100%;max-width:460px;padding:22px 22px 18px;box-shadow:0 1px 2px rgba(0,0,0,.03);}}
+.modal h3{{margin:0 0 14px;font-weight:600;font-size:18px;letter-spacing:-.01em;}}
 .modal label{{display:block;font-size:12.5px;color:var(--muted);margin:11px 0 4px;}}
-.modal input{{width:100%;padding:9px 11px;font-size:14px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);outline:none;}}
+.modal input{{width:100%;padding:9px 11px;font-size:14px;border:1px solid var(--line-strong);border-radius:9px;background:var(--surface-soft);color:var(--ink);outline:none;}}
 .modal input:focus{{border-color:var(--accent);}}
 .row2{{display:flex;gap:10px;}}.row2>div{{flex:1;}}
-.modal select{{width:100%;padding:9px 11px;font-size:14px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);}}
+.modal select{{width:100%;padding:9px 11px;font-size:14px;border:1px solid var(--line-strong);border-radius:9px;background:var(--surface-soft);color:var(--ink);}}
 .actions{{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;}}
 /* tree view */
 .tree{{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:8px;}}
