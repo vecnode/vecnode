@@ -22,6 +22,7 @@ RUN useradd --create-home --uid 10001 app
 
 WORKDIR /app
 COPY app.py /app/app.py
+COPY static/ /app/static/
 
 EXPOSE 8095
 ENV PORT=8095 \

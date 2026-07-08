@@ -6,8 +6,9 @@ A lightweight web viewer/manager for the repo's `library/` folder.
   (`python:3.12-slim` + a single stdlib `app.py`, plus PyMuPDF for thumbnails).
 - The build context is **only this folder**, so **no PDFs are baked into the image**.
 - At runtime the launcher bind-mounts the repo `library/` to `/library`. The server walks
-  it on each request and renders an Anthropic-style index, streaming PDFs inline for the
-  browser's PDF viewer.
+  it on each request and renders an index in the same light, simple style as doc-processor's
+  UI (shared CSS tokens, no serif headings), streaming PDFs inline for the browser's PDF
+  viewer.
 
 Features:
 - **Edit** a document's display title / author / year and **rename** the file on disk.
