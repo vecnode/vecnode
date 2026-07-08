@@ -254,7 +254,7 @@ cmd fails with "… was unexpected at this time."
 
 vecnode is an MCP ([Model Context Protocol](https://modelcontextprotocol.io)) **host**: it
 exposes its own host-control functions as MCP tools, using the official
-[`rmcp`](https://crates.io/crates/rmcp) Rust SDK. Two toolsets so far, both implemented as
+[`rmcp`](https://crates.io/crates/rmcp) Rust SDK. Three toolsets so far, all implemented as
 `#[tool_router]` blocks on the same `AppsToolset` struct (rmcp merges same-typed routers
 with `+`; see `AppsToolset::new`) — there is exactly one implementation whether the caller
 is an external MCP client or vecnode's own Ollama chat:
@@ -264,13 +264,46 @@ is an external MCP client or vecnode's own Ollama chat:
   `commands::apps::{list, open_reported, stop_reported}` (`restart_app` composes
   `stop_reported` + `open_reported` in one gated call).
 - **Docker** ([cli/crates/vn/src/mcp/docker_toolset.rs](cli/crates/vn/src/mcp/docker_toolset.rs)):
-  `list_containers`, `container_logs`, `docker_check`, `disk_usage` (read-only — the last
-  wraps `docker system df`) and `docker_stop_all`/`docker_remove_containers`/
-  `docker_remove_images` (host-wide and hard/impossible to undo, so gated) — introspection
-  into and maintenance of whatever docker actually has (any container/image, not just
-  vecnode's own apps), via `commands::apps::{docker_ps_all, docker_logs_tail,
-  docker_check_reported, docker_stop_all_reported, docker_remove_containers_reported,
-  docker_remove_images_reported, docker_disk_usage}`.
+  `docker_list_containers`, `docker_container_logs`, `docker_check`, `docker_disk_usage`
+  (read-only — the last wraps `docker system df`) and `docker_stop_all`/
+  `docker_remove_containers`/`docker_remove_images` (host-wide and hard/impossible to undo,
+  so gated) — introspection into and maintenance of whatever docker actually has (any
+  container/image, not just vecnode's own apps), via `commands::apps::{docker_ps_all,
+  docker_logs_tail, docker_check_reported, docker_stop_all_reported,
+  docker_remove_containers_reported, docker_remove_images_reported, docker_disk_usage}`.
+  Every tool name here is prefixed `docker_`, even the read-only ones, since all toolsets
+  share one flat `tools/list` namespace with `list_apps`/`open_app`/etc - the prefix is what
+  tells an LLM a name means "docker-wide" rather than "one vecnode app".
+  `docker_container_logs` also takes an optional `pattern` (regex, via the `regex` crate):
+  when set, it scans the last `SEARCH_SCAN_LINES` (5000) lines instead of the plain
+  `lines`-bounded tail and returns only matching lines, capped at `MAX_MATCHES` (200) - see
+  `search_or_tail_logs` in `docker_toolset.rs`.
+- **System** ([cli/crates/vn/src/mcp/system_toolset.rs](cli/crates/vn/src/mcp/system_toolset.rs)):
+  `system_list_processes` - lists every OS process on the host (not docker containers, not
+  vecnode apps): PID, name, exe path, parent PID, status, memory, uptime; optional `filter`
+  substring. Read-only, no gate. Queried live via [`sysinfo`](https://crates.io/crates/sysinfo)
+  (already a dependency - see `commands::sys`/`tray.rs`) rather than shelling out to
+  `tasklist`/`ps`, so each call is a fresh, uncached snapshot with no subprocess-spawn
+  overhead - "real-time" here means every call reflects current state, not a continuous push
+  (MCP's `tools/call` is request/response, so there's no live-streaming tool-call mode).
+  Unfiltered results are capped at 300 rows on a busy host.
+
+**Report-based tools** (every tool above except `list_apps`,
+`docker_list_containers`/`docker_container_logs`/`docker_disk_usage`, and
+`system_list_processes`, which just fetch and return text) share plumbing in
+[mcp/report.rs](cli/crates/vn/src/mcp/report.rs): `run_reported` runs an `apps::*_reported`
+fn on a blocking task and joins its captured lines into the `CallToolResult`, and
+`require_approval` produces the standard denial result for gated tools. Each such tool is
+split into a thin `#[tool]` wrapper and an `_impl(params, live: Option<LiveReporter>)`
+method - the `#[tool]` macro's wire dispatch can't carry an extra parameter, so the wrapper
+calls `_impl(params, None)`, while `call_by_name` (the in-process Ollama chat path) calls it
+with `Some(live)`. `LiveReporter` is a `Fn(&str)` callback: the TUI's chat worker
+(`spawn_chat_worker`) supplies one that forwards each line straight into the CLI Output panel
+as it's produced (via `ProcEvent::McpActivity`), instead of the panel sitting idle for the
+whole tool call and then dumping every line at once when it returns - which is what a slow
+`open_app` docker build or `docker_remove_images` used to look like before this existed.
+External MCP clients never get a `LiveReporter`: MCP's `tools/call` is request/response, so
+they only ever see the final joined result regardless.
 
 A full list of tools and what they do is tracked for humans in
 [docs/mcp-functions.md](docs/mcp-functions.md) — update it whenever a tool is added,
@@ -303,11 +336,12 @@ same "type yes to confirm" pattern used for destructive menu items
 (`InputPurpose::ApproveMcp`) and blocks the tool call until you answer. Headless (`vn mcp
 serve`), `ApprovalGate::headless()` auto-denies every request — fail-closed, since there's
 no console free to prompt on (stdio *is* the protocol channel). Everything else (`list_apps`,
-`open_app`, `list_containers`, `container_logs`, `docker_check`, `disk_usage`) isn't gated;
-they run immediately — either read-only, or (for `open_app`) matching the TUI's own "vn app
-open" menu items. `docker_stop_all`/`docker_remove_containers`/`docker_remove_images` are
-gated even though there's no single-app equivalent requiring it, because unlike `stop_app`
-they act on every container/image on the host, not just vecnode's own.
+`open_app`, `docker_list_containers`, `docker_container_logs`, `docker_check`,
+`docker_disk_usage`, `system_list_processes`) isn't gated; they run immediately — either
+read-only, or (for `open_app`) matching the TUI's own "vn app open" menu items.
+`docker_stop_all`/`docker_remove_containers`/`docker_remove_images` are gated even though
+there's no single-app equivalent requiring it, because unlike `stop_app` they act on every
+container/image on the host, not just vecnode's own.
 
 **Ollama chat integration** (`spawn_chat_worker` in
 [tui/app.rs](cli/crates/vn/src/tui/app.rs)): every chat turn attaches `ToolInfo` entries
@@ -316,15 +350,40 @@ client sees via `tools/list` — `ollama-rs`'s `ToolInfo`/`ToolFunctionInfo` are
 structs, so no compile-time-known tool types are needed). If the reply has `tool_calls`,
 each one is dispatched via `AppsToolset::call_by_name` (in-process, no HTTP/stdio
 round-trip — `stop_app` still goes through the same `ApprovalGate`), logged into the CLI
-Output panel as `[MCP] Calling ...` / `[MCP] Result: ...`, and fed back as a
+Output panel as `[MCP] Calling ...` (report-based tools also stream their own progress lines
+live in between, see `LiveReporter` above) / `[MCP] Result: ...`, and fed back as a
 `ChatMessage::tool(...)` — capped at `MAX_TOOL_ROUNDS` (4) to bound a confused model's
-tool-calling loop.
+tool-calling loop. Every `ollama.send_chat_messages` call is wrapped in
+`tokio::time::timeout(CHAT_REQUEST_TIMEOUT, ...)` (5 minutes) - `ollama-rs`'s HTTP client has
+no timeout of its own, so a hung/stuck local model (e.g. one confused by a hallucinated tool
+call into generating a runaway reply) would otherwise block the single chat-worker thread
+forever with no error and no crash, which looks like "the CLI Output panel just stopped"
+rather than an obvious hang, since the rest of the TUI runs on other threads and stays
+responsive.
+
+**Ground truth for hallucinated tool use:** a small local model will sometimes claim to have
+done something ("restarted the container!") in its final reply without actually calling any
+tool that turn - `spawn_chat_worker` tracks whether at least one tool call was dispatched
+during the turn and, if not, appends `MCP_NONE_TAG` (`[MCP: NONE]`) on its own line *after*
+the reply (`"{reply}\n{MCP_NONE_TAG}"`) before it's logged/shown (the *unmodified* reply is
+still what's saved into the session and fed back to the model as history - the tag is
+display/log-only). Deliberately not `[MCP]` alone: that would collide with the existing
+`[MCP] Calling .../[MCP] Result: ...` activity-line prefixes when grepping a log for one or
+the other. `pump_process`'s `split_to_entries` turns that `\n` into its own log line, and the
+render loop (`spans_for_stdout_line` in [tui/app.rs](cli/crates/vn/src/tui/app.rs)) renders a
+line that's exactly the tag entirely in the same Magenta as `[MCP]` activity lines, rather
+than the reply's normal DIM tone - on its own line and separately colored so it reads as a
+distinct marker, not part of the message.
 
 **To add a tool:** add a `#[tool(description = "...")]` method (with a params struct
 deriving `serde::Deserialize` + `schemars::JsonSchema` if it takes arguments) to an existing
 `impl AppsToolset` toolset block, and add a matching arm in `call_by_name` (or the relevant
 `call_*_by_name` fallback, like `call_docker_tool_by_name`) so the Ollama integration can
-dispatch to it by name. **To add a whole new toolset:** a new file under `mcp/` with its own
+dispatch to it by name. If it reports progress rather than completing near-instantly, build
+it on `mcp/report.rs`'s `run_reported`/`require_approval` and split it into a thin `#[tool]`
+wrapper plus an `_impl(params, live: Option<LiveReporter>)` method (see `open_app`/
+`open_app_impl`) so it streams to the TUI's chat like the others. **To add a whole new
+toolset:** a new file under `mcp/` with its own
 `impl AppsToolset { #[tool_router(router = my_router)] ... }` block (see
 `docker_toolset.rs`), merged into `AppsToolset::new`'s `tool_router` field with `+` and
 dispatched via a new `call_*_by_name` fallback from `call_by_name`. Bump the tool count

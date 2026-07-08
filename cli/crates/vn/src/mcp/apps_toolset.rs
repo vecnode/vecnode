@@ -10,6 +10,7 @@
 use crate::commands::apps;
 use crate::config::LoadedConfig;
 use crate::mcp::approval::ApprovalGate;
+use crate::mcp::report::{require_approval, run_reported, LiveReporter};
 use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
@@ -20,9 +21,10 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 
 /// Number of tools this toolset exposes (list_apps, open_app, stop_app,
-/// restart_app), plus the docker toolset merged into the same struct -
-/// shown in the TUI's "MCP Server" panel.
-pub const TOOL_COUNT: usize = 4 + crate::mcp::docker_toolset::TOOL_COUNT;
+/// restart_app), plus the docker and system toolsets merged into the same
+/// struct - shown in the TUI's "MCP Server" panel.
+pub const TOOL_COUNT: usize =
+    4 + crate::mcp::docker_toolset::TOOL_COUNT + crate::mcp::system_toolset::TOOL_COUNT;
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct OpenAppParams {
@@ -78,11 +80,11 @@ impl AppsToolset {
             loaded,
             approval,
             default_no_open,
-            tool_router: Self::tool_router() + Self::docker_router(),
+            tool_router: Self::tool_router() + Self::docker_router() + Self::system_router(),
         }
     }
 
-    /// Accessor for the docker toolset's destructive tools (`docker_stop_all`,
+    /// Accessor for the docker toolset's gated tools (`docker_stop_all`,
     /// `docker_remove_containers`, `docker_remove_images`) - they live in a
     /// different module (`docker_toolset.rs`) and so can't reach the private
     /// `approval` field directly.
@@ -109,26 +111,7 @@ impl AppsToolset {
         &self,
         Parameters(params): Parameters<OpenAppParams>,
     ) -> Result<CallToolResult, McpError> {
-        let no_open = params.no_open.unwrap_or(self.default_no_open);
-        let loaded = self.loaded.clone();
-        let (outcome, lines) = tokio::task::spawn_blocking(move || {
-            let mut lines = Vec::new();
-            let mut report = |line: &str| lines.push(line.to_string());
-            let outcome = apps::open_reported(&params.name, &loaded, no_open, &mut report);
-            (outcome, lines)
-        })
-        .await
-        .map_err(|err| McpError::internal_error(format!("task join error: {err}"), None))?;
-
-        match outcome {
-            Ok(()) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                lines.join("\n"),
-            )])),
-            Err(err) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                "{err:#}\n{}",
-                lines.join("\n")
-            ))])),
-        }
+        self.open_app_impl(params, None).await
     }
 
     #[tool(
@@ -138,32 +121,7 @@ impl AppsToolset {
         &self,
         Parameters(params): Parameters<StopAppParams>,
     ) -> Result<CallToolResult, McpError> {
-        let description = format!("stop_app(name=\"{}\")", params.name);
-        if !self.approval.request(description).await {
-            return Ok(CallToolResult::error(vec![ContentBlock::text(
-                "Denied: this action requires user approval in the vecnode TUI.",
-            )]));
-        }
-
-        let loaded = self.loaded.clone();
-        let (outcome, lines) = tokio::task::spawn_blocking(move || {
-            let mut lines = Vec::new();
-            let mut report = |line: &str| lines.push(line.to_string());
-            let outcome = apps::stop_reported(&params.name, &loaded, &mut report);
-            (outcome, lines)
-        })
-        .await
-        .map_err(|err| McpError::internal_error(format!("task join error: {err}"), None))?;
-
-        match outcome {
-            Ok(()) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                lines.join("\n"),
-            )])),
-            Err(err) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                "{err:#}\n{}",
-                lines.join("\n")
-            ))])),
-        }
+        self.stop_app_impl(params, None).await
     }
 
     #[tool(
@@ -173,34 +131,62 @@ impl AppsToolset {
         &self,
         Parameters(params): Parameters<RestartAppParams>,
     ) -> Result<CallToolResult, McpError> {
-        let description = format!("restart_app(name=\"{}\")", params.name);
-        if !self.approval.request(description).await {
-            return Ok(CallToolResult::error(vec![ContentBlock::text(
-                "Denied: this action requires user approval in the vecnode TUI.",
-            )]));
-        }
+        self.restart_app_impl(params, None).await
+    }
+}
 
+impl AppsToolset {
+    /// Shared implementation behind the `open_app` MCP tool and
+    /// `call_by_name`'s streaming path. The `#[tool]` macro's generated wire
+    /// dispatch can't carry an extra live-reporter parameter, so the thin
+    /// `#[tool]` method above just calls this with `live: None`; `call_by_name`
+    /// (the in-process Ollama chat path) passes `Some` so progress streams to
+    /// the caller as it's produced instead of only at the end.
+    async fn open_app_impl(
+        &self,
+        params: OpenAppParams,
+        live: Option<LiveReporter>,
+    ) -> Result<CallToolResult, McpError> {
         let no_open = params.no_open.unwrap_or(self.default_no_open);
         let loaded = self.loaded.clone();
-        let (outcome, lines) = tokio::task::spawn_blocking(move || {
-            let mut lines = Vec::new();
-            let mut report = |line: &str| lines.push(line.to_string());
-            let outcome = apps::stop_reported(&params.name, &loaded, &mut report)
-                .and_then(|()| apps::open_reported(&params.name, &loaded, no_open, &mut report));
-            (outcome, lines)
+        run_reported(live, move |report| {
+            apps::open_reported(&params.name, &loaded, no_open, report)
         })
         .await
-        .map_err(|err| McpError::internal_error(format!("task join error: {err}"), None))?;
+    }
 
-        match outcome {
-            Ok(()) => Ok(CallToolResult::success(vec![ContentBlock::text(
-                lines.join("\n"),
-            )])),
-            Err(err) => Ok(CallToolResult::error(vec![ContentBlock::text(format!(
-                "{err:#}\n{}",
-                lines.join("\n")
-            ))])),
+    async fn stop_app_impl(
+        &self,
+        params: StopAppParams,
+        live: Option<LiveReporter>,
+    ) -> Result<CallToolResult, McpError> {
+        let description = format!("stop_app(name=\"{}\")", params.name);
+        if let Some(denied) = require_approval(&self.approval, description).await {
+            return Ok(denied);
         }
+        let loaded = self.loaded.clone();
+        run_reported(live, move |report| {
+            apps::stop_reported(&params.name, &loaded, report)
+        })
+        .await
+    }
+
+    async fn restart_app_impl(
+        &self,
+        params: RestartAppParams,
+        live: Option<LiveReporter>,
+    ) -> Result<CallToolResult, McpError> {
+        let description = format!("restart_app(name=\"{}\")", params.name);
+        if let Some(denied) = require_approval(&self.approval, description).await {
+            return Ok(denied);
+        }
+        let no_open = params.no_open.unwrap_or(self.default_no_open);
+        let loaded = self.loaded.clone();
+        run_reported(live, move |report| {
+            apps::stop_reported(&params.name, &loaded, report)
+                .and_then(|()| apps::open_reported(&params.name, &loaded, no_open, report))
+        })
+        .await
     }
 }
 
@@ -212,10 +198,13 @@ impl AppsToolset {
         self.tool_router.list_all()
     }
 
-    /// Call a tool by name with raw JSON arguments. Used by the Ollama chat
-    /// integration, which discovers tools dynamically via `list_tools` and
-    /// needs to invoke whichever one the model picked - unlike the MCP
-    /// transports (stdio/HTTP), it has no `RequestContext` to route through
+    /// Call a tool by name with raw JSON arguments, streaming progress lines
+    /// to `live` as a report-based tool call produces them (see
+    /// `LiveReporter`) rather than only returning the joined result once the
+    /// whole call finishes. Used by the Ollama chat integration, which
+    /// discovers tools dynamically via `list_tools` and needs to invoke
+    /// whichever one the model picked - unlike the MCP transports
+    /// (stdio/HTTP), it has no `RequestContext` to route through
     /// `ToolRouter::call`, so this matches by name directly. New tools need
     /// an arm here too (or, for a whole new toolset, a `call_*_by_name`
     /// fallback like `call_docker_tool_by_name` below).
@@ -223,6 +212,7 @@ impl AppsToolset {
         &self,
         name: &str,
         arguments: serde_json::Value,
+        live: LiveReporter,
     ) -> Result<CallToolResult, McpError> {
         match name {
             "list_apps" => self.list_apps().await,
@@ -230,13 +220,13 @@ impl AppsToolset {
                 let params: OpenAppParams = serde_json::from_value(arguments).map_err(|err| {
                     McpError::invalid_params(format!("invalid open_app arguments: {err}"), None)
                 })?;
-                self.open_app(Parameters(params)).await
+                self.open_app_impl(params, Some(live)).await
             }
             "stop_app" => {
                 let params: StopAppParams = serde_json::from_value(arguments).map_err(|err| {
                     McpError::invalid_params(format!("invalid stop_app arguments: {err}"), None)
                 })?;
-                self.stop_app(Parameters(params)).await
+                self.stop_app_impl(params, Some(live)).await
             }
             "restart_app" => {
                 let params: RestartAppParams =
@@ -246,15 +236,23 @@ impl AppsToolset {
                             None,
                         )
                     })?;
-                self.restart_app(Parameters(params)).await
+                self.restart_app_impl(params, Some(live)).await
             }
-            other => match self.call_docker_tool_by_name(other, arguments).await {
-                Some(result) => result,
-                None => Err(McpError::invalid_params(
-                    format!("unknown tool: {other}"),
-                    None,
-                )),
-            },
+            other => {
+                if let Some(result) = self
+                    .call_docker_tool_by_name(other, arguments.clone(), live)
+                    .await
+                {
+                    return result;
+                }
+                match self.call_system_tool_by_name(other, arguments).await {
+                    Some(result) => result,
+                    None => Err(McpError::invalid_params(
+                        format!("unknown tool: {other}"),
+                        None,
+                    )),
+                }
+            }
         }
     }
 }
@@ -270,9 +268,12 @@ impl ServerHandler for AppsToolset {
             .with_server_info(Implementation::new("vecnode", env!("CARGO_PKG_VERSION")))
             .with_protocol_version(ProtocolVersion::V_2024_11_05)
             .with_instructions(
-                "vecnode host controller: list/open/stop the Dockerized vecnode apps, and \
-                 inspect any docker container on the host (list_containers, container_logs). \
-                 stop_app requires interactive approval in the vecnode TUI.",
+                "vecnode host controller: list/open/stop/restart the Dockerized vecnode apps, \
+                 inspect/maintain docker on the host (docker_list_containers, \
+                 docker_container_logs, docker_check, docker_disk_usage, docker_stop_all, \
+                 docker_remove_containers, docker_remove_images), and list OS processes on \
+                 the host (system_list_processes). stop_app, restart_app, and the destructive \
+                 docker_* tools require interactive approval in the vecnode TUI.",
             )
     }
 }
