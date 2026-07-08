@@ -36,6 +36,7 @@ import tempfile
 import threading
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 
 PORT = int(os.environ.get("PORT", "8095"))
 DOWNLOAD_TIMEOUT_SECONDS = int(os.environ.get("DOWNLOAD_TIMEOUT_SECONDS", "1800"))
@@ -48,124 +49,9 @@ ALLOW_PRIVATE_HOSTS = os.environ.get("ALLOW_PRIVATE_HOSTS", "0") == "1"
 
 KINDS = ("mp3", "wav", "mp4")
 
-PAGE = """<!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>media downloader</title>
-<style>
-:root{
-  --bg:#f7f6f2;--surface:#ffffff;--surface-soft:#fbfaf7;--text:#1f1f1a;
-  --muted:#66655f;--line:#dfddd5;--line-strong:#cdcabf;--accent:#1f6feb;
-  --ok:#1f7a4d;--err:#b3261e;
-}
-*{box-sizing:border-box;}
-body{
-  margin:0;padding:1.25rem;color:var(--text);
-  background:linear-gradient(180deg,#f8f7f3 0%,#f4f3ef 100%);
-  font-family:"Segoe UI","Inter","Noto Sans","Helvetica Neue",Arial,sans-serif;
-  line-height:1.45;
-}
-.wrap{max-width:640px;margin:2rem auto;}
-.card{
-  border:1px solid var(--line);border-radius:12px;background:var(--surface);
-  box-shadow:0 1px 2px rgba(0,0,0,.03);padding:1rem 1.25rem 1.25rem;
-}
-h1{font-size:1.5rem;margin:0 0 .3rem;font-weight:600;letter-spacing:-.01em;}
-p.sub{margin:0 0 1.1rem;color:var(--muted);font-size:.92rem;}
-.url{
-  width:100%;padding:.7rem .8rem;font-size:.95rem;font:inherit;
-  background:var(--surface-soft);border:1px solid var(--line-strong);
-  border-radius:8px;color:var(--text);outline:none;
-  transition:border-color 140ms ease;
-}
-.url:focus-visible{outline:2px solid #6b95df;outline-offset:2px;}
-.row{display:flex;gap:.6rem;margin-top:.8rem;flex-wrap:wrap;}
-button.kind{
-  flex:1 1 120px;padding:.55rem .7rem;font-size:.92rem;font-weight:600;font:inherit;
-  background:var(--surface-soft);border:1px solid var(--line-strong);border-radius:8px;
-  color:var(--text);cursor:pointer;transition:background-color 140ms ease,border-color 140ms ease;
-}
-button.kind:hover{background:#f1f4fa;border-color:#bec8dc;}
-button.kind:focus-visible{outline:2px solid #6b95df;outline-offset:2px;}
-button.kind:disabled{opacity:.5;cursor:not-allowed;}
-.status{
-  margin-top:1.1rem;padding:.6rem .7rem;background:var(--surface-soft);
-  border:1px solid var(--line);border-radius:8px;font-size:.87rem;color:var(--muted);
-  min-height:1.3rem;white-space:pre-wrap;word-break:break-word;
-}
-.status.ok{color:var(--ok);border-color:var(--ok);}
-.status.err{color:var(--err);border-color:var(--err);}
-footer{margin-top:1.3rem;color:var(--muted);font-size:.78rem;}
-code{background:var(--surface-soft);border:1px solid var(--line);padding:1px 6px;border-radius:5px;}
-</style></head>
-<body>
-<div class="wrap">
-  <div class="card">
-    <h1>media downloader</h1>
-    <p class="sub">Paste a video link, pick a format. Files are saved to your <strong>__OUTPUT_LABEL__</strong>. Powered by yt-dlp + ffmpeg.</p>
-    <input id="url" class="url" type="text" placeholder="https://..." autocomplete="off">
-    <div class="row">
-      <button class="kind" data-kind="mp3" type="button">Save MP3</button>
-      <button class="kind" data-kind="wav" type="button">Save WAV</button>
-      <button class="kind" data-kind="mp4" type="button">Save MP4</button>
-    </div>
-    <div id="status" class="status">Ready.</div>
-    <footer>API: <code>POST /api/download</code> &middot; Health: <code>/health</code></footer>
-  </div>
-</div>
-<script>
-const urlInput = document.getElementById('url');
-const statusEl = document.getElementById('status');
-const buttons = Array.from(document.querySelectorAll('button.kind'));
-
-function setStatus(text, cls) {
-  statusEl.textContent = text;
-  statusEl.className = 'status' + (cls ? ' ' + cls : '');
-}
-function setButtonsDisabled(disabled) {
-  for (const b of buttons) b.disabled = disabled;
-}
-
-async function startDownload(kind) {
-  const url = urlInput.value.trim();
-  if (!url) { setStatus('Paste a URL first.', 'err'); return; }
-
-  setButtonsDisabled(true);
-  const startedAt = performance.now();
-  setStatus('Downloading (' + kind.toUpperCase() + ')...');
-  const timer = setInterval(() => {
-    const elapsed = ((performance.now() - startedAt) / 1000).toFixed(0);
-    setStatus('Downloading (' + kind.toUpperCase() + ')... ' + elapsed + 's elapsed');
-  }, 1000);
-
-  try {
-    const res = await fetch('/api/download', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, kind }),
-    });
-    const data = await res.json().catch(() => ({ detail: res.statusText }));
-    if (!res.ok || !data.ok) {
-      throw new Error(data.detail || res.statusText);
-    }
-    setStatus('Saved to ' + data.saved_to + ':\\n' + data.filename, 'ok');
-  } catch (error) {
-    setStatus('Error: ' + error.message, 'err');
-  } finally {
-    clearInterval(timer);
-    setButtonsDisabled(false);
-  }
-}
-
-for (const b of buttons) {
-  b.addEventListener('click', () => startDownload(b.dataset.kind));
-}
-urlInput.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter') startDownload('mp4');
-});
-</script>
-</body></html>
-"""
+# UI assets live in static/ (index.html, style.css, main.js) rather than
+# embedded in this file - see do_GET's fixed routes for the three of them.
+STATIC_DIR = Path(__file__).resolve().parent / "static"
 
 
 def tool_version(command: list) -> str:
@@ -405,7 +291,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?", 1)[0]
         if path in ("/", "/index.html"):
-            return self._send(200, PAGE.replace("__OUTPUT_LABEL__", OUTPUT_LABEL))
+            html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+            return self._send(200, html.replace("__OUTPUT_LABEL__", OUTPUT_LABEL))
+        if path == "/static/style.css":
+            return self._send(
+                200, (STATIC_DIR / "style.css").read_bytes(), "text/css; charset=utf-8"
+            )
+        if path == "/static/main.js":
+            return self._send(
+                200,
+                (STATIC_DIR / "main.js").read_bytes(),
+                "text/javascript; charset=utf-8",
+            )
         if path == "/health":
             return self._json(200, {
                 "status": "ok",
