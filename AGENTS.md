@@ -226,7 +226,9 @@ mount.
 `vn app open library-portal` builds the image (the build context is only
 `docker/library-portal/`, so **no PDFs enter the image**), then runs it with the repo
 `library/` bind-mounted on port 8090 and opens Chrome. The server walks `/library` per
-request and renders an Anthropic-style index, streaming PDFs inline for the browser viewer.
+request and renders an index in the same light, simple card style as doc-processor's UI
+(shared `--bg`/`--surface`/`--accent` tokens, no serif headings), streaming PDFs inline for
+the browser viewer.
 It supports edit/rename, per-document tags, delete, list/grid/tree views, sort, and (in tree
 view) creating folders and drag-and-drop moving PDFs into them. App state
 (metadata overrides + tags) is kept in `library/.portal/portal.json` and thumbnails are

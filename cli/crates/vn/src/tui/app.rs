@@ -2027,9 +2027,14 @@ fn event_loop(
                     } else if let LogEntry::Stderr(text) = entry {
                         Line::from(Span::styled(text.clone(), Style::default().fg(Color::Yellow)))
                     } else if let LogEntry::Stdout(text) = entry {
+                        // Body text (docker build/log passthrough, AI chat
+                        // replies) uses the same dark-grey tone as dim
+                        // chrome (DIM) rather than stark white - softer for
+                        // long-form reading. [INFO] keeps its own MUTED tone
+                        // unchanged below.
                         Line::from(Span::styled(
                             text.clone(),
-                            Style::default().fg(tagged_line_color(text, Color::White)),
+                            Style::default().fg(tagged_line_color(text, DIM)),
                         ))
                     } else {
                         match entry {
