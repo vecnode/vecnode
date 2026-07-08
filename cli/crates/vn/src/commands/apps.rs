@@ -238,7 +238,10 @@ pub fn open_reported(
     }
 
     if let Some((context, dockerfile)) = &plan.build {
-        report(&format!("[INFO] Building image '{}'...", plan.image));
+        report(&format!(
+            "[DOCKER] [INFO] Building image '{}'...",
+            plan.image
+        ));
         let mut args: Vec<String> = vec!["build".into(), "-t".into(), plan.image.clone()];
         if let Some(df) = dockerfile {
             args.push("-f".into());
@@ -246,26 +249,29 @@ pub fn open_reported(
         }
         args.push(context.display().to_string());
         run_docker_streaming(&args, report)?;
-        report("[OK] Image built.");
+        report("[DOCKER] [OK] Image built.");
     }
 
     match plan.lifecycle {
         Lifecycle::Recreate { rm_on_exit } => {
             let _ = docker_quiet(&["rm", "-f", plan.container]);
             run_container(&plan, rm_on_exit)?;
-            report(&format!("[OK] Container started: {}", plan.container));
+            report(&format!(
+                "[DOCKER] [OK] Container started: {}",
+                plan.container
+            ));
         }
         Lifecycle::Reuse => {
             let state = container_state(plan.container)?;
             if state == ContainerState::Running {
                 report(&format!(
-                    "[OK] Container '{}' is already running.",
+                    "[DOCKER] [OK] Container '{}' is already running.",
                     plan.container
                 ));
             } else if state == ContainerState::Stopped && container_exit_code(plan.container)? == 0
             {
                 report(&format!(
-                    "[INFO] Starting existing container '{}'...",
+                    "[DOCKER] [INFO] Starting existing container '{}'...",
                     plan.container
                 ));
                 docker_quiet(&["start", plan.container])
@@ -273,47 +279,56 @@ pub fn open_reported(
             } else {
                 if state == ContainerState::Stopped {
                     report(&format!(
-                        "[INFO] Container '{}' previously exited with an error; recreating it...",
+                        "[DOCKER] [INFO] Container '{}' previously exited with an error; recreating it...",
                         plan.container
                     ));
                     let _ = docker_quiet(&["rm", "-f", plan.container]);
                 }
                 report(&format!(
-                    "[INFO] Running image '{}'. First run downloads it; this can take a while...",
+                    "[DOCKER] [INFO] Running image '{}'. First run downloads it; this can take a while...",
                     plan.image
                 ));
                 run_container(&plan, false)?;
-                report(&format!("[OK] Container started: {}", plan.container));
+                report(&format!(
+                    "[DOCKER] [OK] Container started: {}",
+                    plan.container
+                ));
             }
         }
     }
 
-    report(&format!("[INFO] Waiting for {} ...", plan.open_url));
+    report(&format!(
+        "[DOCKER] [INFO] Waiting for {} ...",
+        plan.open_url
+    ));
     if wait_ready(&plan)? {
-        report(&format!("[OK] {} is ready.", name));
+        report(&format!("[DOCKER] [OK] {} is ready.", name));
     } else {
         report(&format!(
-            "[WARNING] {} did not respond yet; opening the browser anyway.",
+            "[DOCKER] [WARNING] {} did not respond yet; opening the browser anyway.",
             name
         ));
     }
 
     if no_open {
-        report("[INFO] --no-open set; not launching a browser.");
+        report("[DOCKER] [INFO] --no-open set; not launching a browser.");
     } else {
         open_browser(&plan.open_url, report);
     }
 
     report("");
-    report(&format!("[INFO] Open:  {}", plan.open_url));
+    report(&format!("[DOCKER] [INFO] Open:  {}", plan.open_url));
     for line in &plan.info {
-        report(&format!("[INFO] {}", line));
+        report(&format!("[DOCKER] [INFO] {}", line));
     }
     report(&format!(
-        "[INFO] Stop:  vn app stop {}   (or: docker stop {})",
+        "[DOCKER] [INFO] Stop:  vn app stop {}   (or: docker stop {})",
         name, plan.container
     ));
-    report(&format!("[INFO] Logs:  docker logs -f {}", plan.container));
+    report(&format!(
+        "[DOCKER] [INFO] Logs:  docker logs -f {}",
+        plan.container
+    ));
     Ok(())
 }
 
@@ -331,15 +346,15 @@ pub fn stop_reported(
 
     if container_state(plan.container)? == ContainerState::Absent {
         report(&format!(
-            "[INFO] No '{}' container exists. Nothing to stop.",
+            "[DOCKER] [INFO] No '{}' container exists. Nothing to stop.",
             plan.container
         ));
         return Ok(());
     }
-    report(&format!("[INFO] Stopping '{}'...", plan.container));
+    report(&format!("[DOCKER] [INFO] Stopping '{}'...", plan.container));
     docker_quiet(&["stop", plan.container])
         .with_context(|| format!("failed to stop container {}", plan.container))?;
-    report(&format!("[OK] Stopped '{}'.", plan.container));
+    report(&format!("[DOCKER] [OK] Stopped '{}'.", plan.container));
     Ok(())
 }
 
@@ -378,14 +393,14 @@ pub fn docker_stop_all() -> Result<()> {
     check_docker_ready(&mut println_reporter)?;
     let running = docker_lines(&["ps", "-q"])?;
     if running.is_empty() {
-        println!("[INFO] No running containers to stop.");
+        println!("[DOCKER] [INFO] No running containers to stop.");
         return Ok(());
     }
-    println!("[INFO] Stopping all running containers...");
+    println!("[DOCKER] [INFO] Stopping all running containers...");
     for id in &running {
         let _ = docker_quiet(&["stop", id]);
     }
-    println!("[OK] All running containers stopped.");
+    println!("[DOCKER] [OK] All running containers stopped.");
     Ok(())
 }
 
@@ -394,14 +409,14 @@ pub fn docker_remove_containers() -> Result<()> {
     docker_stop_all()?;
     let all = docker_lines(&["ps", "-aq"])?;
     if all.is_empty() {
-        println!("[INFO] No containers to remove.");
+        println!("[DOCKER] [INFO] No containers to remove.");
         return Ok(());
     }
-    println!("[INFO] Removing all containers...");
+    println!("[DOCKER] [INFO] Removing all containers...");
     for id in &all {
         let _ = docker_quiet(&["rm", "-f", id]);
     }
-    println!("[OK] All containers removed.");
+    println!("[DOCKER] [OK] All containers removed.");
     Ok(())
 }
 
@@ -409,14 +424,14 @@ pub fn docker_remove_images() -> Result<()> {
     check_docker_ready(&mut println_reporter)?;
     let images = docker_lines(&["images", "-aq"])?;
     if images.is_empty() {
-        println!("[INFO] No images to remove.");
+        println!("[DOCKER] [INFO] No images to remove.");
         return Ok(());
     }
-    println!("[INFO] Removing all Docker images...");
+    println!("[DOCKER] [INFO] Removing all Docker images...");
     for id in &images {
         let _ = docker_quiet(&["rmi", "-f", id]);
     }
-    println!("[OK] All images removed.");
+    println!("[DOCKER] [OK] All images removed.");
     Ok(())
 }
 
@@ -514,7 +529,7 @@ fn check_docker_ready(report: &mut dyn FnMut(&str)) -> Result<()> {
     if !ok {
         bail!("Docker daemon is not running. Start Docker and try again.");
     }
-    report("[OK] Docker daemon is running.");
+    report("[DOCKER] [OK] Docker daemon is running.");
     Ok(())
 }
 
@@ -692,7 +707,7 @@ fn open_browser(url: &str, report: &mut dyn FnMut(&str)) {
         ];
         for candidate in chrome_candidates.into_iter().flatten() {
             if candidate.exists() {
-                report(&format!("[INFO] Opening Chrome at {url}"));
+                report(&format!("[DOCKER] [INFO] Opening Chrome at {url}"));
                 let _ = Command::new(candidate)
                     .arg(url)
                     .stdin(Stdio::null())
@@ -703,7 +718,7 @@ fn open_browser(url: &str, report: &mut dyn FnMut(&str)) {
             }
         }
         report(&format!(
-            "[INFO] Chrome not found; opening default browser at {url}"
+            "[DOCKER] [INFO] Chrome not found; opening default browser at {url}"
         ));
         let _ = Command::new("cmd")
             .args(["/C", "start", "", url])
@@ -728,7 +743,7 @@ fn open_browser(url: &str, report: &mut dyn FnMut(&str)) {
                 .map(|s| s.success())
                 .unwrap_or(false)
             {
-                report(&format!("[INFO] Opening Chrome at {url}"));
+                report(&format!("[DOCKER] [INFO] Opening Chrome at {url}"));
                 let _ = Command::new(browser)
                     .arg(url)
                     .stdout(Stdio::null())
@@ -738,7 +753,7 @@ fn open_browser(url: &str, report: &mut dyn FnMut(&str)) {
             }
         }
         report(&format!(
-            "[INFO] Chrome not found; opening default browser at {url}"
+            "[DOCKER] [INFO] Chrome not found; opening default browser at {url}"
         ));
         let _ = Command::new("xdg-open")
             .arg(url)
@@ -748,7 +763,7 @@ fn open_browser(url: &str, report: &mut dyn FnMut(&str)) {
     }
     #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
-        report(&format!("[INFO] Open manually: {url}"));
+        report(&format!("[DOCKER] [INFO] Open manually: {url}"));
     }
 }
 
@@ -759,23 +774,26 @@ fn backup_silverbullet_space(report: &mut dyn FnMut(&str)) -> Result<()> {
     let home = dirs::home_dir().context("could not determine home directory")?;
     let space = home.join("silverbullet-space");
     if !space.exists() {
-        report("[INFO] Space folder does not exist, creating it.");
+        report("[DOCKER] [INFO] Space folder does not exist, creating it.");
         fs::create_dir_all(&space)?;
         return Ok(());
     }
     let desktop = home.join("Desktop");
     if !desktop.exists() {
-        report("[WARNING] No Desktop folder; skipping space backup.");
+        report("[DOCKER] [WARNING] No Desktop folder; skipping space backup.");
         return Ok(());
     }
     let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
     let target = desktop.join(format!("silverbullet-space-backup-{ts}"));
     report(&format!(
-        "[INFO] Backing up space folder to: {}",
+        "[DOCKER] [INFO] Backing up space folder to: {}",
         target.display()
     ));
     copy_dir_recursive(&space, &target)?;
-    report(&format!("[OK] Backup completed: {}", target.display()));
+    report(&format!(
+        "[DOCKER] [OK] Backup completed: {}",
+        target.display()
+    ));
     Ok(())
 }
 

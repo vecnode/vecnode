@@ -53,39 +53,65 @@ PAGE = """<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>media downloader</title>
 <style>
-:root{--bg:#0B0E14;--surface:#141925;--ink:#E7ECF3;--muted:#8993A6;--accent:#0EA5E9;--line:#232B3B;--ok:#34D399;--err:#F87171;}
+:root{
+  --bg:#f7f6f2;--surface:#ffffff;--surface-soft:#fbfaf7;--text:#1f1f1a;
+  --muted:#66655f;--line:#dfddd5;--line-strong:#cdcabf;--accent:#1f6feb;
+  --ok:#1f7a4d;--err:#b3261e;
+}
 *{box-sizing:border-box;}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif;line-height:1.5;}
-.wrap{max-width:640px;margin:0 auto;padding:64px 24px 48px;}
-h1{font-size:26px;margin:0 0 6px;font-weight:600;}
-p.sub{margin:0 0 28px;color:var(--muted);font-size:14.5px;}
-.url{width:100%;padding:13px 15px;font-size:15px;background:var(--surface);border:1px solid var(--line);
-  border-radius:10px;color:var(--ink);outline:none;}
-.url:focus{border-color:var(--accent);}
-.row{display:flex;gap:10px;margin-top:14px;flex-wrap:wrap;}
-button.kind{flex:1 1 120px;padding:12px;font-size:14px;font-weight:600;background:var(--surface);
-  border:1px solid var(--line);border-radius:10px;color:var(--ink);cursor:pointer;transition:border-color .12s;}
-button.kind:hover{border-color:var(--accent);}
+body{
+  margin:0;padding:1.25rem;color:var(--text);
+  background:linear-gradient(180deg,#f8f7f3 0%,#f4f3ef 100%);
+  font-family:"Segoe UI","Inter","Noto Sans","Helvetica Neue",Arial,sans-serif;
+  line-height:1.45;
+}
+.wrap{max-width:640px;margin:2rem auto;}
+.card{
+  border:1px solid var(--line);border-radius:12px;background:var(--surface);
+  box-shadow:0 1px 2px rgba(0,0,0,.03);padding:1rem 1.25rem 1.25rem;
+}
+h1{font-size:1.5rem;margin:0 0 .3rem;font-weight:600;letter-spacing:-.01em;}
+p.sub{margin:0 0 1.1rem;color:var(--muted);font-size:.92rem;}
+.url{
+  width:100%;padding:.7rem .8rem;font-size:.95rem;font:inherit;
+  background:var(--surface-soft);border:1px solid var(--line-strong);
+  border-radius:8px;color:var(--text);outline:none;
+  transition:border-color 140ms ease;
+}
+.url:focus-visible{outline:2px solid #6b95df;outline-offset:2px;}
+.row{display:flex;gap:.6rem;margin-top:.8rem;flex-wrap:wrap;}
+button.kind{
+  flex:1 1 120px;padding:.55rem .7rem;font-size:.92rem;font-weight:600;font:inherit;
+  background:var(--surface-soft);border:1px solid var(--line-strong);border-radius:8px;
+  color:var(--text);cursor:pointer;transition:background-color 140ms ease,border-color 140ms ease;
+}
+button.kind:hover{background:#f1f4fa;border-color:#bec8dc;}
+button.kind:focus-visible{outline:2px solid #6b95df;outline-offset:2px;}
 button.kind:disabled{opacity:.5;cursor:not-allowed;}
-.status{margin-top:22px;padding:14px 16px;background:var(--surface);border:1px solid var(--line);
-  border-radius:10px;font-size:13.5px;color:var(--muted);min-height:20px;white-space:pre-wrap;word-break:break-word;}
+.status{
+  margin-top:1.1rem;padding:.6rem .7rem;background:var(--surface-soft);
+  border:1px solid var(--line);border-radius:8px;font-size:.87rem;color:var(--muted);
+  min-height:1.3rem;white-space:pre-wrap;word-break:break-word;
+}
 .status.ok{color:var(--ok);border-color:var(--ok);}
 .status.err{color:var(--err);border-color:var(--err);}
-footer{margin-top:30px;color:var(--muted);font-size:12px;}
-code{background:var(--surface);padding:1px 6px;border-radius:5px;}
+footer{margin-top:1.3rem;color:var(--muted);font-size:.78rem;}
+code{background:var(--surface-soft);border:1px solid var(--line);padding:1px 6px;border-radius:5px;}
 </style></head>
 <body>
 <div class="wrap">
-  <h1>media downloader</h1>
-  <p class="sub">Paste a video link, pick a format. Files are saved to your <strong>__OUTPUT_LABEL__</strong>. Powered by yt-dlp + ffmpeg.</p>
-  <input id="url" class="url" type="text" placeholder="https://..." autocomplete="off">
-  <div class="row">
-    <button class="kind" data-kind="mp3" type="button">Save MP3</button>
-    <button class="kind" data-kind="wav" type="button">Save WAV</button>
-    <button class="kind" data-kind="mp4" type="button">Save MP4</button>
+  <div class="card">
+    <h1>media downloader</h1>
+    <p class="sub">Paste a video link, pick a format. Files are saved to your <strong>__OUTPUT_LABEL__</strong>. Powered by yt-dlp + ffmpeg.</p>
+    <input id="url" class="url" type="text" placeholder="https://..." autocomplete="off">
+    <div class="row">
+      <button class="kind" data-kind="mp3" type="button">Save MP3</button>
+      <button class="kind" data-kind="wav" type="button">Save WAV</button>
+      <button class="kind" data-kind="mp4" type="button">Save MP4</button>
+    </div>
+    <div id="status" class="status">Ready.</div>
+    <footer>API: <code>POST /api/download</code> &middot; Health: <code>/health</code></footer>
   </div>
-  <div id="status" class="status">Ready.</div>
-  <footer>API: <code>POST /api/download</code> &middot; Health: <code>/health</code></footer>
 </div>
 <script>
 const urlInput = document.getElementById('url');
