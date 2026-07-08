@@ -14,6 +14,9 @@ futures-util = { workspace = true }
 ratatui = { workspace = true }
 ollama-rs = { workspace = true }
 reqwest = { workspace = true }
+rmcp = { version = "2", features = ["transport-io", "transport-streamable-http-server"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
+schemars = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 sysinfo = { workspace = true }

@@ -1,4 +1,7 @@
+use crate::commands::mcp as mcp_command;
 use crate::config::{expand_tilde, LoadedConfig};
+use crate::mcp::approval::{ApprovalGate, PendingApproval};
+use crate::mcp::AppsToolset;
 use crate::ollama::session::{session_path, SessionFile};
 use anyhow::Result;
 use chrono::Local;
@@ -12,12 +15,14 @@ use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
 use ollama_rs::generation::chat::{request::ChatMessageRequest, ChatMessage};
+use ollama_rs::generation::tools::{ToolFunctionInfo, ToolInfo, ToolType};
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Row, Table};
+use ratatui::widgets::{Block, Borders, List, ListItem, ListState, Paragraph, Row, Table, Wrap};
 use ratatui::Terminal;
+use std::collections::VecDeque;
 use std::env;
 use std::fs::OpenOptions;
 use std::io::Read;
@@ -27,6 +32,7 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
+use tokio::sync::{mpsc::UnboundedReceiver, oneshot};
 
 // ---- Theme: one cyan accent (the Docker header / button blue) on the
 // terminal's (black) background, plus two grays. Two "blues" total: this cyan
@@ -63,6 +69,11 @@ enum InputPurpose {
     /// Armed by `Action::ExecuteConfirm`: only runs `args` (labelled `label`)
     /// if the typed line is "yes"; anything else cancels.
     ConfirmDestructive(Vec<&'static str>, &'static str),
+    /// Armed by a pending MCP tool-call approval (`AppState.active_mcp_respond`
+    /// holds the actual oneshot reply channel; this variant just carries the
+    /// description text for display, since a `oneshot::Sender` can't derive
+    /// `Clone`/`PartialEq`).
+    ApproveMcp(String),
 }
 
 #[derive(Clone)]
@@ -90,6 +101,9 @@ enum ProcEvent {
     Stderr(String),
     /// A reply from the persistent chat worker thread (see `spawn_chat_worker`).
     ChatReply(std::result::Result<String, String>),
+    /// An intermediate MCP tool-call/result line from the chat's tool-calling
+    /// loop, shown distinctly from the final chat reply.
+    McpActivity(String),
 }
 
 /// One turn sent to the persistent chat worker thread.
@@ -158,12 +172,26 @@ struct AppState {
     /// Sends chat turns to the persistent background worker (see
     /// `spawn_chat_worker`); replies come back on `rx` as `ProcEvent::ChatReply`.
     chat_tx: Sender<ChatRequest>,
+    /// Loopback port the embedded MCP HTTP server listens on (see
+    /// `spawn_mcp_server`); shown in the "MCP Server" panel.
+    mcp_port: u16,
+    /// Approval requests not yet drained into `input_purpose` (only one is
+    /// shown at a time - see `pump_mcp_approvals`).
+    mcp_pending: VecDeque<PendingApproval>,
+    /// The reply channel for the approval currently shown in the input box
+    /// (`InputPurpose::ApproveMcp`), answered by `send_input_line`.
+    active_mcp_respond: Option<oneshot::Sender<bool>>,
+    mcp_approval_rx: UnboundedReceiver<PendingApproval>,
 }
 
 impl AppState {
     fn new(repo_root: Option<std::path::PathBuf>, loaded: LoadedConfig) -> Self {
+        const MCP_PORT: u16 = 7332;
+
         let (tx, rx) = mpsc::channel::<ProcEvent>();
-        let chat_tx = spawn_chat_worker(loaded, tx.clone());
+        let (mcp_approval, mcp_approval_rx) = ApprovalGate::new();
+        spawn_mcp_server(loaded.clone(), mcp_approval.clone(), MCP_PORT, tx.clone());
+        let chat_tx = spawn_chat_worker(loaded, mcp_approval, tx.clone());
 
         let log_file = open_session_log(&repo_root);
 
@@ -194,6 +222,10 @@ impl AppState {
             last_dashboard_area: Rect::default(),
             running_selected: 0,
             chat_tx,
+            mcp_port: MCP_PORT,
+            mcp_pending: VecDeque::new(),
+            active_mcp_respond: None,
+            mcp_approval_rx,
         };
 
         app.refresh_ui();
@@ -390,7 +422,10 @@ impl AppState {
         if let Some(repo_root) = &self.repo_root {
             cmd.arg("--repo-root").arg(repo_root);
         }
-        cmd.args(["ai", "models"]).stdin(Stdio::null());
+        // Chat always attaches tools now, so only offer models that actually
+        // support tool-calling (see commands::ai::model_supports_tools).
+        cmd.args(["ai", "models", "--tools-only"])
+            .stdin(Stdio::null());
 
         if let Ok(output) = cmd.output() {
             let text = String::from_utf8_lossy(&output.stdout);
@@ -574,7 +609,9 @@ impl AppState {
                 self.load_models_into_menu();
                 if self.model_items.is_empty() {
                     self.push_log(LogEntry::Info(
-                        "[INFO] No models found. Is Ollama running? Try Open Ollama, or use Download Model."
+                        "[INFO] No tool-capable models found. Chat always uses tools, so models \
+                         without that capability (e.g. gemma3:1b) aren't listed here. Is Ollama \
+                         running? Try Open Ollama, or Download Model with 'llama3.2' (small, supports tools)."
                             .to_string(),
                     ));
                 } else {
@@ -605,7 +642,9 @@ impl AppState {
                             model
                         )));
                     }
-                    InputPurpose::None | InputPurpose::ConfirmDestructive(..) => {}
+                    InputPurpose::None
+                    | InputPurpose::ConfirmDestructive(..)
+                    | InputPurpose::ApproveMcp(_) => {}
                 }
                 self.input_purpose = purpose;
                 self.trim_logs();
@@ -746,6 +785,19 @@ impl AppState {
                 self.input_purpose = InputPurpose::None;
                 self.focus = Focus::Dashboard;
             }
+            InputPurpose::ApproveMcp(description) => {
+                let approved = text.eq_ignore_ascii_case("yes");
+                if let Some(respond) = self.active_mcp_respond.take() {
+                    let _ = respond.send(approved);
+                }
+                self.push_log(LogEntry::Info(format!(
+                    "[MCP] {}: {}",
+                    if approved { "Approved" } else { "Denied" },
+                    description
+                )));
+                self.input_purpose = InputPurpose::None;
+                self.focus = Focus::Dashboard;
+            }
             InputPurpose::None => {
                 self.push_log(LogEntry::Info(
                     "[INFO] Input is not attached to an action. Use Download Model or Chat first."
@@ -770,10 +822,25 @@ impl AppState {
                         .into_iter()
                         .map(LogEntry::Stderr),
                 ),
-                ProcEvent::ChatReply(Ok(text)) => self.push_log(LogEntry::Stdout(text)),
+                // A `Line`/`Span` renders as one visual line regardless of
+                // embedded '\n's, so multi-line text (a markdown-formatted
+                // chat reply, a multi-line tool result) must be split into
+                // one LogEntry per physical line here, same as process
+                // stdout/stderr chunks - otherwise it shows as one squashed
+                // line even with wrapping enabled.
+                ProcEvent::ChatReply(Ok(text)) => self.extend_log(
+                    split_to_entries(text, false)
+                        .into_iter()
+                        .map(LogEntry::Stdout),
+                ),
                 ProcEvent::ChatReply(Err(err)) => {
                     self.push_log(LogEntry::Error(format!("[ERROR] {}", err)))
                 }
+                ProcEvent::McpActivity(text) => self.extend_log(
+                    split_to_entries(text, false)
+                        .into_iter()
+                        .map(LogEntry::Info),
+                ),
             }
         }
 
@@ -812,6 +879,33 @@ impl AppState {
         }
 
         self.trim_logs();
+    }
+
+    /// Drain newly-arrived MCP approval requests (from the embedded server or
+    /// the Ollama chat's tool-calling loop) into `mcp_pending`, then, if
+    /// nothing is already being shown, arm the input box with the next one.
+    /// A pending approval takes over the input box regardless of what it was
+    /// previously armed for - these are blocking requests from the caller's
+    /// point of view, so they can't wait for you to finish an unrelated typed
+    /// line first.
+    fn pump_mcp_approvals(&mut self) {
+        while let Ok(pending) = self.mcp_approval_rx.try_recv() {
+            self.mcp_pending.push_back(pending);
+        }
+
+        if !matches!(self.input_purpose, InputPurpose::ApproveMcp(_)) {
+            if let Some(pending) = self.mcp_pending.pop_front() {
+                self.push_log(LogEntry::Error(format!(
+                    "[MCP] Approval requested: {}. Type 'yes' to approve, anything else to deny.",
+                    pending.description
+                )));
+                self.active_mcp_respond = Some(pending.respond);
+                self.input_purpose = InputPurpose::ApproveMcp(pending.description);
+                self.focus = Focus::Input;
+                self.input.clear();
+                self.trim_logs();
+            }
+        }
     }
 
     fn shutdown(&mut self) {
@@ -922,6 +1016,36 @@ fn open_session_log(repo_root: &Option<std::path::PathBuf>) -> Option<std::fs::F
     Some(file)
 }
 
+/// Spawn the embedded MCP HTTP server (loopback-only) on its own thread/tokio
+/// runtime, matching `spawn_chat_worker`'s style. Destructive tool calls
+/// (`stop_app`) go through `approval`, which the TUI drains every frame (see
+/// `pump_mcp_approvals`) - unlike the standalone `vn mcp serve` CLI command,
+/// this one has a TUI attached, so approvals actually get a prompt instead of
+/// being auto-denied. Bind/serve errors are reported into the CLI Output
+/// panel via `tx` rather than printed directly (which would corrupt the
+/// ratatui display).
+fn spawn_mcp_server(
+    loaded: LoadedConfig,
+    approval: ApprovalGate,
+    port: u16,
+    tx: Sender<ProcEvent>,
+) {
+    thread::spawn(move || {
+        let rt = match tokio::runtime::Runtime::new() {
+            Ok(rt) => rt,
+            Err(err) => {
+                let _ = tx.send(ProcEvent::Stderr(format!(
+                    "[MCP] failed to start server runtime: {err}\n"
+                )));
+                return;
+            }
+        };
+        if let Err(err) = rt.block_on(mcp_command::serve_http(loaded, port, approval, true)) {
+            let _ = tx.send(ProcEvent::Stderr(format!("[MCP] server error: {err:#}\n")));
+        }
+    });
+}
+
 /// Spawn a persistent background worker that owns the Ollama client and chat
 /// session for the TUI's Chat feature. Replaces the old design of re-spawning
 /// `vn ai chat` as a subprocess per message: that re-created the Ollama client
@@ -930,7 +1054,51 @@ fn open_session_log(repo_root: &Option<std::path::PathBuf>) -> Option<std::fs::F
 /// memory for the life of the TUI, appending to (and saving) the session file
 /// after each reply. Returns the `Sender` used to submit chat turns; replies
 /// come back on `tx` as `ProcEvent::ChatReply`.
-fn spawn_chat_worker(loaded: LoadedConfig, tx: Sender<ProcEvent>) -> Sender<ChatRequest> {
+/// Tool-calling rounds per chat turn: the model can call a tool, see the
+/// result, and call another before replying, but this bounds how many times
+/// that can chain so a confused model can't loop forever.
+const MAX_TOOL_ROUNDS: u32 = 4;
+
+/// Build the Ollama tool definitions for every tool `toolset` exposes, from
+/// the same JSON-schema metadata an MCP client would see via `tools/list`.
+/// `ollama-rs`'s `ToolInfo`/`ToolFunctionInfo` are plain public structs, so
+/// this works for a runtime-discovered tool set with no compile-time-known
+/// `Tool` types on the ollama-rs side.
+fn build_ollama_tools(toolset: &AppsToolset) -> Vec<ToolInfo> {
+    toolset
+        .list_tools()
+        .into_iter()
+        .filter_map(|tool| {
+            let schema_value = serde_json::Value::Object((*tool.input_schema).clone());
+            let parameters: schemars::Schema = serde_json::from_value(schema_value).ok()?;
+            Some(ToolInfo {
+                tool_type: ToolType::Function,
+                function: ToolFunctionInfo {
+                    name: tool.name.to_string(),
+                    description: tool.description.clone().unwrap_or_default().to_string(),
+                    parameters,
+                },
+            })
+        })
+        .collect()
+}
+
+/// Extract the text content of an MCP `CallToolResult` for display and for
+/// feeding back to the model as a `tool`-role message.
+fn call_tool_result_text(result: &rmcp::model::CallToolResult) -> String {
+    result
+        .content
+        .iter()
+        .filter_map(|block| block.as_text().map(|t| t.text.clone()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn spawn_chat_worker(
+    loaded: LoadedConfig,
+    mcp_approval: ApprovalGate,
+    tx: Sender<ProcEvent>,
+) -> Sender<ChatRequest> {
     let (req_tx, req_rx) = mpsc::channel::<ChatRequest>();
 
     thread::spawn(move || {
@@ -959,6 +1127,13 @@ fn spawn_chat_worker(loaded: LoadedConfig, tx: Sender<ProcEvent>) -> Sender<Chat
         let ollama = crate::commands::ai::build_client(&loaded.config.ollama.host);
         let default_model = loaded.config.ollama.model.clone();
         let system_prompt = loaded.config.prompts.system.clone();
+        // Same tool implementations the MCP server exposes, called in-process
+        // here (no HTTP/stdio round-trip needed since we're in the same
+        // process) - `stop_app` still goes through `mcp_approval`, so a
+        // destructive tool call the model makes surfaces the same TUI
+        // approval prompt as one from an external MCP client.
+        let toolset = AppsToolset::new(loaded, mcp_approval);
+        let tools = build_ollama_tools(&toolset);
 
         while let Ok(req) = req_rx.recv() {
             let model = req.model.unwrap_or_else(|| default_model.clone());
@@ -977,12 +1152,44 @@ fn spawn_chat_worker(loaded: LoadedConfig, tx: Sender<ProcEvent>) -> Sender<Chat
             }
             messages.push(ChatMessage::user(req.message.clone()));
 
-            let request = ChatMessageRequest::new(model.clone(), messages);
-            let result = rt.block_on(ollama.send_chat_messages(request));
+            let result: std::result::Result<String, ollama_rs::error::OllamaError> =
+                rt.block_on(async {
+                    for _ in 0..MAX_TOOL_ROUNDS {
+                        let request = ChatMessageRequest::new(model.clone(), messages.clone())
+                            .tools(tools.clone());
+                        let response = ollama.send_chat_messages(request).await?;
+                        let msg = response.message;
+
+                        if msg.tool_calls.is_empty() {
+                            return Ok(msg.content);
+                        }
+
+                        messages.push(msg.clone());
+                        for call in &msg.tool_calls {
+                            let name = call.function.name.clone();
+                            let _ = tx.send(ProcEvent::McpActivity(format!(
+                                "[MCP] Calling {}({})",
+                                name, call.function.arguments
+                            )));
+                            let text = match toolset
+                                .call_by_name(&name, call.function.arguments.clone())
+                                .await
+                            {
+                                Ok(result) => call_tool_result_text(&result),
+                                Err(err) => format!("Error: {err}"),
+                            };
+                            let _ =
+                                tx.send(ProcEvent::McpActivity(format!("[MCP] Result: {}", text)));
+                            messages.push(ChatMessage::tool(text));
+                        }
+                    }
+                    Ok(format!(
+                    "(stopped after {MAX_TOOL_ROUNDS} tool-calling rounds without a final reply)"
+                ))
+                });
 
             match result {
-                Ok(response) => {
-                    let reply = response.message.content;
+                Ok(reply) => {
                     session.append_user(req.message);
                     session.append_assistant(reply.clone());
                     if let Err(err) = session.save(&path) {
@@ -1505,6 +1712,7 @@ fn event_loop(
 
     loop {
         app.pump_process();
+        app.pump_mcp_approvals();
 
         if app.last_docker_refresh.elapsed() >= DOCKER_REFRESH_INTERVAL {
             app.refresh_docker_panel();
@@ -1649,7 +1857,8 @@ fn event_loop(
                 .constraints([
                     Constraint::Percentage(40),
                     Constraint::Percentage(30),
-                    Constraint::Percentage(30),
+                    Constraint::Percentage(15),
+                    Constraint::Percentage(15),
                 ])
                 .split(middle[0]);
 
@@ -1661,7 +1870,7 @@ fn event_loop(
                 if app.menu == MenuKind::SelectModel {
                     if app.model_items.is_empty() {
                         (
-                            vec!["(no models found - use Download Model)".to_string()],
+                            vec!["(no tool-capable models - try 'llama3.2' via Download Model)".to_string()],
                             "Select Model",
                         )
                     } else {
@@ -1774,6 +1983,15 @@ fn event_loop(
             let running_panel =
                 List::new(running_items).block(panel_block("Running (Enter: kill)", running_focused));
 
+            let mcp_status_line = format!(
+                "Apps toolset: {} tool(s)  |  HTTP: 127.0.0.1:{}",
+                crate::mcp::apps_toolset::TOOL_COUNT,
+                app.mcp_port
+            );
+            let mcp_panel = Paragraph::new(mcp_status_line)
+                .style(Style::default().fg(MUTED))
+                .block(plain_block("MCP Server".to_string()));
+
             let log_lines: Vec<Line> = app
                 .logs
                 .iter()
@@ -1802,11 +2020,16 @@ fn event_loop(
                 })
                 .collect();
 
+            // Approximate: counts log entries, not the visual rows they wrap
+            // into (the Paragraph below wraps long lines). Good enough for
+            // paging/follow purposes; a long wrapped entry near the bottom
+            // may need an extra scroll tick to fully reach.
             app.output_view_lines = middle[1].height.saturating_sub(2) as usize;
             app.clamp_output_scroll();
 
             let output = Paragraph::new(log_lines)
                 .block(plain_block("CLI Output".to_string()))
+                .wrap(Wrap { trim: false })
                 .scroll((app.output_scroll, 0));
 
             let keys_text = match app.focus {
@@ -1835,6 +2058,12 @@ fn event_loop(
                     InputPurpose::ConfirmDestructive(_, label) => {
                         format!("Type 'yes' to confirm '{}', or Tab to cancel...", label)
                     }
+                    InputPurpose::ApproveMcp(description) => {
+                        format!(
+                            "MCP approval: {} - type 'yes' to approve, anything else to deny...",
+                            description
+                        )
+                    }
                     InputPurpose::None => "Type input for running command...".to_string(),
                 }
             };
@@ -1856,10 +2085,39 @@ fn event_loop(
             frame.render_stateful_widget(dashboard, left_panels[0], &mut list_state);
             frame.render_widget(docker, left_panels[1]);
             frame.render_widget(running_panel, left_panels[2]);
+            frame.render_widget(mcp_panel, left_panels[3]);
             frame.render_widget(output, middle[1]);
             frame.render_widget(footer, areas[2]);
         })?;
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::AppConfig;
+
+    /// Guards against `build_ollama_tools`'s `filter_map(...).ok()?` silently
+    /// dropping a tool whose JSON schema fails to parse into
+    /// `schemars::Schema` - every tool the toolset registers should make it
+    /// into the Ollama-facing tool list.
+    #[test]
+    fn build_ollama_tools_includes_every_registered_tool() {
+        let loaded = LoadedConfig {
+            path: std::path::PathBuf::from("test-config.toml"),
+            config: AppConfig::default(),
+        };
+        let (approval, _rx) = ApprovalGate::new();
+        let toolset = AppsToolset::new(loaded, approval);
+
+        let tools = build_ollama_tools(&toolset);
+
+        assert_eq!(tools.len(), crate::mcp::apps_toolset::TOOL_COUNT);
+        let names: Vec<&str> = tools.iter().map(|t| t.function.name.as_str()).collect();
+        assert!(names.contains(&"list_apps"));
+        assert!(names.contains(&"open_app"));
+        assert!(names.contains(&"stop_app"));
+    }
 }

@@ -1,5 +1,6 @@
 mod commands;
 mod config;
+mod mcp;
 mod ollama;
 mod tray;
 mod tui;
@@ -30,8 +31,33 @@ enum Command {
     Git(GitArgs),
     Net(NetArgs),
     Run(RunArgs),
+    Mcp(McpArgs),
     Tray,
     Tui,
+}
+
+#[derive(clap::Args, Debug)]
+struct McpArgs {
+    #[command(subcommand)]
+    command: McpSubcommand,
+}
+
+#[derive(Subcommand, Debug)]
+enum McpSubcommand {
+    /// Serve vecnode's MCP tools (currently: list/open/stop apps).
+    ///
+    /// Stdio (default) is for MCP clients that spawn their own subprocess
+    /// (Claude Desktop/Code). With no TUI attached, destructive tool calls
+    /// (stop_app) are auto-denied - there's no console free to approve them
+    /// on, since stdio is the protocol channel itself.
+    Serve {
+        /// Serve over loopback HTTP (Streamable HTTP) instead of stdio.
+        #[arg(long)]
+        http: bool,
+        /// Port to listen on when --http is set.
+        #[arg(long, default_value_t = 7332)]
+        port: u16,
+    },
 }
 
 #[derive(clap::Args, Debug)]
@@ -71,7 +97,13 @@ enum AiCommand {
     /// Check whether the Ollama server is reachable.
     Status,
     /// List locally installed models (one name per line).
-    Models,
+    Models {
+        /// Only list models that support tool/function calling (checked via
+        /// `ollama show`'s reported capabilities). The TUI's chat always
+        /// attaches tools, so a model without this capability can't chat.
+        #[arg(long)]
+        tools_only: bool,
+    },
     /// Download a model by name (e.g. llama3.2).
     Pull { name: String },
     /// Send a chat message and print the reply (context kept per session).
@@ -182,6 +214,7 @@ async fn main() -> Result<()> {
         Some(Command::Git(args)) => commands::git::run(args)?,
         Some(Command::Net(args)) => commands::net::run(args)?,
         Some(Command::Run(args)) => commands::run::run(args, &loaded)?,
+        Some(Command::Mcp(args)) => commands::mcp::run(args, &loaded).await?,
         Some(Command::Tray) => tray::run(repo_root)?,
         Some(Command::Tui) | None => tui::app::run(repo_root, loaded)?,
     }

@@ -16,7 +16,7 @@ pub async fn run(args: AiArgs, loaded: &LoadedConfig) -> Result<()> {
 
     match args.command {
         AiCommand::Status => status(&ollama, &host).await,
-        AiCommand::Models => models(&ollama).await,
+        AiCommand::Models { tools_only } => models(&ollama, tools_only).await,
         AiCommand::Pull { name } => pull(&ollama, &name).await,
         AiCommand::Chat {
             message,
@@ -79,8 +79,11 @@ async fn status(ollama: &Ollama, host: &str) -> Result<()> {
 }
 
 /// Print installed model names, one per line, to stdout. Kept free of other
-/// output so the TUI can parse it directly to build the model menu.
-async fn models(ollama: &Ollama) -> Result<()> {
+/// output so the TUI can parse it directly to build the model menu. With
+/// `tools_only`, skips models that don't report the `tools` capability (the
+/// TUI chat always attaches tools, so a model without it can't chat at all -
+/// see `model_supports_tools`).
+async fn models(ollama: &Ollama, tools_only: bool) -> Result<()> {
     let models = ollama
         .list_local_models()
         .await
@@ -94,9 +97,23 @@ async fn models(ollama: &Ollama) -> Result<()> {
     }
 
     for model in models {
+        if tools_only && !model_supports_tools(ollama, &model.name).await {
+            continue;
+        }
         println!("{}", model.name);
     }
     Ok(())
+}
+
+/// Whether `name` reports the `tools` capability via `ollama show`. Treated
+/// as unsupported (rather than erroring) if the lookup itself fails, so one
+/// broken model doesn't break listing the rest.
+async fn model_supports_tools(ollama: &Ollama, name: &str) -> bool {
+    ollama
+        .show_model_info(name.to_string())
+        .await
+        .map(|info| info.capabilities.iter().any(|c| c == "tools"))
+        .unwrap_or(false)
 }
 
 async fn pull(ollama: &Ollama, name: &str) -> Result<()> {

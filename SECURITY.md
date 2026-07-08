@@ -15,9 +15,10 @@ repository.
 1. [Rust CLI Security Practices](#rust-cli-security-practices)
 2. [Script Execution Model](#script-execution-model)
 3. [Dockerized Web Apps](#dockerized-web-apps)
-4. [Filesystem Access](#filesystem-access)
-5. [Network Access](#network-access)
-6. [Additional Resources](#additional-resources)
+4. [MCP Host](#mcp-host)
+5. [Filesystem Access](#filesystem-access)
+6. [Network Access](#network-access)
+7. [Additional Resources](#additional-resources)
 
 ---
 
@@ -75,6 +76,8 @@ Current direct dependencies (see [cli/Cargo.toml](cli/Cargo.toml)):
 | `dirs` | 5.0 | Config/data paths |
 | `ollama-rs` | 0.3 | Ollama client for `vn ai` |
 | `reqwest` | 0.12 (rustls, no default features) | HTTP client |
+| `rmcp` | 2 | Official MCP SDK - `vn mcp serve` and the TUI's embedded server (see MCP Host) |
+| `hyper-util` / `schemars` | 0.1 / 1 | HTTP serving / JSON-schema generation for `rmcp` |
 | `serde` / `serde_json` / `toml` | 1.0 / 1.0 / 0.8 | Config + session serialization |
 | `sysinfo` | 0.31 | `vn sys info` |
 | `tokio` | 1.40 | Async runtime |
@@ -148,6 +151,32 @@ current sites). tectonic is a pinned release binary downloaded over HTTPS.
 
 ---
 
+## MCP Host
+
+vecnode exposes its own host-control functions (currently: list/open/stop the Dockerized
+apps) as an MCP server via the official [`rmcp`](https://crates.io/crates/rmcp) SDK - see
+[AGENTS.md](AGENTS.md#mcp-host) for the architecture. Security-relevant properties:
+
+- **Loopback-only by default.** The TUI's embedded server and `vn mcp serve --http` both
+  bind `127.0.0.1` only, matching every other vecnode-managed service in this document.
+  `vn mcp serve` (stdio, no `--http`) never opens a network port at all - it's spawned as a
+  subprocess by the MCP client (Claude Desktop/Code).
+- **v1 exposes one toolset (Apps) only** - `list_apps`, `open_app`, `stop_app`. There is no
+  arbitrary command execution, filesystem, or process-control tool exposed to MCP clients
+  or the local model in this version.
+- **`stop_app` requires human approval.** Any MCP client - external, or vecnode's own
+  Ollama chat calling the identical in-process tool - must have that call approved in the
+  vecnode TUI (`ApprovalGate`, `InputPurpose::ApproveMcp`) before it runs. `list_apps`/
+  `open_app` are not gated, matching the TUI's own unconfirmed "vn app open" menu items.
+- **Fail-closed when headless.** A standalone `vn mcp serve` (no TUI attached) auto-denies
+  every `stop_app` request rather than hanging or silently allowing it - there is no
+  console free to prompt on, since stdio is the protocol channel itself.
+- **`open_app` defaults to not opening a browser** when called via MCP (`no_open: true`
+  unless the caller explicitly passes `false`) - an LLM popping a browser window is a
+  surprising side effect the human didn't ask for.
+
+---
+
 ## Filesystem Access
 
 | Path (Unix) | Path (Windows) | Permission | Purpose |
@@ -171,7 +200,9 @@ are gitignored - do not commit or share them.
 | `vn net scan` | On demand | **Actively scans** the local /24 subnet (common ports) or a given target with RustScan - only scan networks you own or have permission to test |
 | `vn git sync` | On demand | Git remotes over HTTPS/SSH |
 | `vn docker` / Open apps | On demand | Docker daemon; image pulls from Docker Hub/GHCR; media-downloader fetches user-supplied URLs (guarded, see above) |
-| `vn sys`, TUI | - | None |
+| TUI (always) / `vn mcp serve --http` | On demand | MCP server on loopback `127.0.0.1:7332` (see MCP Host) - never reachable off-host |
+| `vn mcp serve` (stdio) | On demand | None - no network port; runs as a subprocess of an MCP client over stdin/stdout |
+| `vn sys` | - | None |
 
 ---
 
