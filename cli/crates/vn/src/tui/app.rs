@@ -1130,8 +1130,11 @@ fn spawn_chat_worker(
         // here (no HTTP/stdio round-trip needed since we're in the same
         // process) - `stop_app` still goes through `mcp_approval`, so a
         // destructive tool call the model makes surfaces the same TUI
-        // approval prompt as one from an external MCP client.
-        let toolset = AppsToolset::new(loaded, mcp_approval);
+        // approval prompt as one from an external MCP client. `false` here
+        // (unlike the headless/external server) since this is the user's own
+        // interactive chat: open_app should actually pop the browser once the
+        // app is ready, matching what "open the doc processor" reads as.
+        let toolset = AppsToolset::new(loaded, mcp_approval, false);
         let tools = build_ollama_tools(&toolset);
 
         while let Ok(req) = req_rx.recv() {
@@ -2182,7 +2185,7 @@ mod tests {
             config: AppConfig::default(),
         };
         let (approval, _rx) = ApprovalGate::new();
-        let toolset = AppsToolset::new(loaded, approval);
+        let toolset = AppsToolset::new(loaded, approval, true);
 
         let tools = build_ollama_tools(&toolset);
 
