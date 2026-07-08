@@ -40,6 +40,10 @@ use tokio::sync::{mpsc::UnboundedReceiver, oneshot};
 const ACCENT: Color = Color::Cyan; // the single blue accent
 const DIM: Color = Color::DarkGray; // de-emphasized borders/text
 const MUTED: Color = Color::Gray; // secondary text / inactive titles
+                                  // CLI Output only adds two source-tag colors on top of the above (see
+                                  // `tagged_line_color`): Magenta for `[MCP]` lines, Blue for `[DOCKER]` lines.
+                                  // Existing severity colors (Error=LightRed, Stderr=Yellow, Command=ACCENT)
+                                  // are untouched by this - it only recolors otherwise-plain Stdout/Info text.
 
 #[derive(Clone, Copy, PartialEq)]
 enum MenuKind {
@@ -1212,6 +1216,21 @@ fn spawn_chat_worker(
     req_tx
 }
 
+/// Color-code CLI Output lines by their leading `[TAG]`, layered on top of
+/// (not replacing) the existing per-severity colors: only `Stdout`/`Info`
+/// lines are tagged this way, since `Error`/`Stderr`/`Command` already have
+/// their own dedicated colors that should keep meaning "needs attention"
+/// regardless of source. Falls back to `default` for untagged lines.
+fn tagged_line_color(text: &str, default: Color) -> Color {
+    if text.starts_with("[MCP]") {
+        Color::Magenta
+    } else if text.starts_with("[DOCKER]") {
+        Color::Blue
+    } else {
+        default
+    }
+}
+
 fn split_to_entries(chunk: String, is_stderr: bool) -> Vec<String> {
     let normalized = chunk.replace("\r\n", "\n").replace('\r', "\n");
     let mut out = Vec::new();
@@ -2008,12 +2027,16 @@ fn event_loop(
                     } else if let LogEntry::Stderr(text) = entry {
                         Line::from(Span::styled(text.clone(), Style::default().fg(Color::Yellow)))
                     } else if let LogEntry::Stdout(text) = entry {
-                        Line::from(Span::styled(text.clone(), Style::default().fg(Color::White)))
+                        Line::from(Span::styled(
+                            text.clone(),
+                            Style::default().fg(tagged_line_color(text, Color::White)),
+                        ))
                     } else {
                         match entry {
-                            LogEntry::Info(text) => {
-                                Line::from(Span::styled(text.clone(), Style::default().fg(MUTED)))
-                            }
+                            LogEntry::Info(text) => Line::from(Span::styled(
+                                text.clone(),
+                                Style::default().fg(tagged_line_color(text, MUTED)),
+                            )),
                             _ => Line::from(Span::raw(String::new())),
                         }
                     }
