@@ -26,7 +26,7 @@
 //! standing alongside it.
 
 use crate::commands::apps;
-use crate::mcp::report::{require_approval, run_reported, LiveReporter};
+use crate::mcp::report::{format_table, require_approval, run_reported, LiveReporter};
 use crate::mcp::AppsToolset;
 use anyhow::Context;
 use regex::Regex;
@@ -91,15 +91,19 @@ impl AppsToolset {
             )]));
         }
 
-        let mut lines = vec!["ID\tNAME\tSTATE\tSTATUS\tIMAGE\tPORTS".to_string()];
+        let mut rows = vec![vec![
+            "ID".to_string(),
+            "NAME".to_string(),
+            "STATE".to_string(),
+            "STATUS".to_string(),
+            "IMAGE".to_string(),
+            "PORTS".to_string(),
+        ]];
         for c in containers {
-            lines.push(format!(
-                "{}\t{}\t{}\t{}\t{}\t{}",
-                c.id, c.name, c.state, c.status, c.image, c.ports
-            ));
+            rows.push(vec![c.id, c.name, c.state, c.status, c.image, c.ports]);
         }
         Ok(CallToolResult::success(vec![ContentBlock::text(
-            lines.join("\n"),
+            format_table(&rows),
         )]))
     }
 

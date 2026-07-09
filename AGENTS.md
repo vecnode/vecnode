@@ -137,6 +137,20 @@ Dashboard — `q` still quits immediately from anywhere in the Dashboard. Mouse 
 scrolls CLI Output; left-clicking a dashboard row selects and runs it. `**bold**` markers
 in CLI Output text (common in AI replies) render bold via `spans_with_bold`.
 
+**Every line from an MCP tool call gets its own `LogEntry::Mcp` variant**, not `Info` -
+`ProcEvent::McpActivity` events (both the `[MCP] Calling .../[MCP] Result: ...` tag lines and
+the untagged continuation lines `split_to_entries` breaks a multi-line result, e.g. a table,
+into) all render Magenta by default (`tagged_line_color(text, Color::Magenta)`), overridden
+only by a line's own more specific tag (a live-streamed docker build's `[DOCKER]` lines stay
+Blue). Previously these were plain `Info` entries, so only the one line that happened to
+literally start with `[MCP]` was colored - every other line from that same call (a table's
+data rows, say) was indistinguishable grey with no visual link back to which call produced
+it. MCP tools that return tabular text (`docker_list_containers`, `system_list_processes`)
+build it with `mcp/report.rs`'s `format_table` (space-padded fixed-width columns), not raw
+`\t` - a real terminal expands tabs to stops, but ratatui's `Paragraph` doesn't, so a
+tab-separated table misaligned badly once word-wrap was involved, occasionally badly enough
+to look like text from a different line overlapping it.
+
 **CLI Output scroll is in wrapped *rows*, not log *entries*.** The `Paragraph` is rendered
 with `Wrap { trim: false }`, and ratatui's own wrap calculation treats `.scroll()`'s offset
 as a rendered-row count - a single long line (a docker build command, easily 300+ characters)
@@ -437,6 +451,15 @@ line, and the render loop (`spans_for_stdout_line` in
 [tui/app.rs](cli/crates/vn/src/tui/app.rs)) renders a line that's exactly the tag entirely in
 the same Magenta as `[MCP]` activity lines, rather than the reply's normal DIM tone - on its
 own line and separately colored so it reads as a distinct marker, not part of the message.
+
+**`OLLAMA_MARKER` (`[OLLAMA]`)** wraps every chat reply, one on its own line before and one
+after (`"{OLLAMA_MARKER}\n{model}: {reply}\n{OLLAMA_MARKER}"`), purely so the reply's
+start/end are visually obvious once other output (MCP activity, docker build lines) has
+scrolled by in between turns. Unlike `MCP_NONE_TAG`, this is display-only - added *after*
+`session.append_assistant` so it's never saved into history or fed back to the model, since
+it carries no information worth the model seeing. Renders in the same DIM grey as the reply
+body with no special-casing needed: it just doesn't match `[MCP]`/`[DOCKER]` in
+`tagged_line_color`, so it falls through to that function's default.
 
 **Session reset on model switch:** the persisted "tui" session (one file, loaded once when
 `spawn_chat_worker` starts) used to survive switching the active model in the "Select Model"

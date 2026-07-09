@@ -135,6 +135,15 @@ enum LogEntry {
     Error(String),
     Stdout(String),
     Stderr(String),
+    /// One line from a `ProcEvent::McpActivity` event - a `[MCP] Calling
+    /// .../[MCP] Result: ...` tag line, or one of the (untagged)
+    /// continuation lines `split_to_entries` breaks a multi-line result
+    /// (e.g. a table) into. Its own variant, not `Info`, so every line an
+    /// MCP tool call produced renders in the same Magenta - previously only
+    /// the one line that happened to literally start with `[MCP]` got
+    /// colored, leaving every other line from that same call grey with no
+    /// visual link back to it.
+    Mcp(String),
 }
 
 enum Focus {
@@ -296,6 +305,7 @@ impl AppState {
             LogEntry::Error(text) => format!("[{}] ERROR | {}", ts, text),
             LogEntry::Stdout(text) => format!("[{}] OUT   | {}", ts, text),
             LogEntry::Stderr(text) => format!("[{}] ERR   | {}", ts, text),
+            LogEntry::Mcp(text) => format!("[{}] MCP   | {}", ts, text),
         };
 
         let _ = writeln!(file, "{}", line);
@@ -887,7 +897,7 @@ impl AppState {
                 ProcEvent::McpActivity(text) => self.extend_log(
                     split_to_entries(text, false)
                         .into_iter()
-                        .map(LogEntry::Info),
+                        .map(LogEntry::Mcp),
                 ),
             }
         }
@@ -1398,7 +1408,10 @@ fn spawn_chat_worker(
                         ))));
                         continue;
                     }
-                    let _ = tx.send(ProcEvent::ChatReply(Ok(format!("{}: {}", model, reply))));
+                    let _ = tx.send(ProcEvent::ChatReply(Ok(format!(
+                        "{OLLAMA_MARKER}\n{}: {}\n{OLLAMA_MARKER}",
+                        model, reply
+                    ))));
                 }
                 Err(err) => {
                     let _ = tx.send(ProcEvent::ChatReply(Err(format!(
@@ -1418,6 +1431,17 @@ fn spawn_chat_worker(
 /// activity lines' color, so it reads as a distinct marker line rather than
 /// part of the message.
 const MCP_NONE_TAG: &str = "[MCP: NONE]";
+
+/// Wraps a chat reply, one on its own line before and one after (see its use
+/// in `spawn_chat_worker`), purely so the reply's start/end are visually
+/// obvious in the CLI Output panel once other output (MCP activity, docker
+/// build lines) has scrolled by in between chat turns. Display-only - not
+/// saved to the session, since it carries no information the model itself
+/// would benefit from seeing in later turns (unlike `MCP_NONE_TAG`). Doesn't
+/// match `[MCP]`/`[DOCKER]` in `tagged_line_color`, so it already renders in
+/// the same DIM grey as the reply body via that function's fallback - no
+/// special-casing needed for the color, only for placement.
+const OLLAMA_MARKER: &str = "[OLLAMA]";
 
 /// Color-code CLI Output lines by their leading `[TAG]`, layered on top of
 /// (not replacing) the existing per-severity colors: only `Stdout`/`Info`
@@ -2299,6 +2323,17 @@ fn event_loop(
                         // unchanged below. `**bold**` markers (common in AI
                         // replies) render bold instead of literal asterisks.
                         Line::from(spans_for_stdout_line(text))
+                    } else if let LogEntry::Mcp(text) = entry {
+                        // Every line an MCP tool call produced defaults to
+                        // Magenta - not just the one line that happens to
+                        // literally start with "[MCP]" - unless it carries
+                        // its own more specific tag (a live-streamed docker
+                        // build's "[DOCKER]" lines stay Blue, matching those
+                        // same lines outside of MCP).
+                        Line::from(spans_with_bold(
+                            text,
+                            Style::default().fg(tagged_line_color(text, Color::Magenta)),
+                        ))
                     } else {
                         match entry {
                             LogEntry::Info(text) => Line::from(spans_with_bold(
@@ -2469,6 +2504,17 @@ mod tests {
         let spans = spans_for_stdout_line("just a normal reply");
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].content.to_string(), "just a normal reply");
+        assert_eq!(spans[0].style.fg, Some(DIM));
+    }
+
+    #[test]
+    fn spans_for_stdout_line_renders_ollama_marker_in_same_dim_as_reply_body() {
+        // OLLAMA_MARKER deliberately doesn't match `[MCP]`/`[DOCKER]` in
+        // tagged_line_color, so it should render identically to a plain
+        // reply line - same color, no special-casing needed for that part.
+        let spans = spans_for_stdout_line(OLLAMA_MARKER);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content.to_string(), "[OLLAMA]");
         assert_eq!(spans[0].style.fg, Some(DIM));
     }
 }

@@ -71,3 +71,42 @@ pub(crate) async fn require_approval(
         )]))
     }
 }
+
+/// Format `rows` (each row's cells; `rows[0]` is the header row) as a
+/// plain-text table with space-padded, fixed-width columns - not
+/// tab-separated. A raw `\t` renders fine in a real terminal (which expands
+/// tabs to stops) but misaligns badly inside the TUI's ratatui `Paragraph`:
+/// it doesn't do tab-stop expansion, so columns drift, and combined with
+/// word-wrap this can visually overlap with unrelated lines rather than just
+/// looking mis-indented. Every column is sized to its own widest cell, so
+/// this reads correctly both there and in a real terminal/log file.
+pub(crate) fn format_table(rows: &[Vec<String>]) -> String {
+    let Some(cols) = rows.first().map(Vec::len) else {
+        return String::new();
+    };
+    let mut widths = vec![0usize; cols];
+    for row in rows {
+        for (i, cell) in row.iter().enumerate() {
+            widths[i] = widths[i].max(cell.chars().count());
+        }
+    }
+    rows.iter()
+        .map(|row| {
+            row.iter()
+                .enumerate()
+                .map(|(i, cell)| {
+                    // No trailing padding on the last column - nothing to
+                    // align after it, and it avoids invisible trailing
+                    // whitespace on every row.
+                    if i + 1 == cols {
+                        cell.clone()
+                    } else {
+                        format!("{cell:width$}", width = widths[i])
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("  ")
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
