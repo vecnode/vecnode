@@ -16,6 +16,7 @@ use crossterm::terminal::{
 };
 use ollama_rs::generation::chat::{request::ChatMessageRequest, ChatMessage};
 use ollama_rs::generation::tools::{ToolFunctionInfo, ToolInfo, ToolType};
+use ollama_rs::models::ModelOptions;
 use ratatui::backend::CrosstermBackend;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
@@ -29,7 +30,7 @@ use std::io::Read;
 use std::io::Write;
 use std::io::{self, Stdout};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::thread;
@@ -159,6 +160,14 @@ struct RunningProcess {
     started_at: Instant,
 }
 
+/// Cap on `AppState::logs` (the CLI Output panel's in-memory scrollback) -
+/// `trim_logs()` drains older entries once this is exceeded. High enough
+/// that a normal session's docker/MCP/chat output doesn't visibly vanish out
+/// from under you mid-use (each entry is a short `String`, so even a few
+/// thousand cost negligible memory) - the full, untrimmed history is always
+/// still in `logs/vn-tui.log` regardless of this cap.
+const MAX_LOG_ENTRIES: usize = 5000;
+
 struct AppState {
     menu: MenuKind,
     commands: Vec<CommandItem>,
@@ -172,6 +181,17 @@ struct AppState {
     focus: Focus,
     output_scroll: u16,
     output_view_lines: usize,
+    /// Exact wrapped-row count of the CLI Output `Paragraph` at its current
+    /// width (`Paragraph::line_count`, ratatui's own wrap calculation - not
+    /// an approximation). `output_scroll` is a *row* offset once wrapping is
+    /// enabled (`Wrap { trim: false }`), not a log-entry offset, so
+    /// `max_output_scroll` must be computed from this, not `logs.len()` -
+    /// using entry count there was the original bug: any entry that wraps
+    /// into more than one row (long docker command lines are common) made
+    /// the "scroll to bottom" target too small, so following new output
+    /// would visibly stop short of the true tail until something else
+    /// (manual scroll, resize) happened to close the gap.
+    output_total_rows: usize,
     follow_output: bool,
     last_log_count: usize,
     docker_panel: DockerPanelData,
@@ -231,6 +251,7 @@ impl AppState {
             focus: Focus::Dashboard,
             output_scroll: 0,
             output_view_lines: 0,
+            output_total_rows: 0,
             follow_output: true,
             last_log_count: 1,
             docker_panel: DockerPanelData {
@@ -325,8 +346,7 @@ impl AppState {
     }
 
     fn max_output_scroll(&self) -> u16 {
-        self.logs
-            .len()
+        self.output_total_rows
             .saturating_sub(self.output_view_lines)
             .min(u16::MAX as usize) as u16
     }
@@ -968,6 +988,12 @@ impl AppState {
     /// Scroll the CLI Output panel up to the nearest Error/Stderr entry above
     /// the current view. Repeated presses walk further back through earlier
     /// errors; cheaper than a full search box for "did the last command fail".
+    /// Treats `output_scroll` (a wrapped-*row* offset, see
+    /// `AppState::output_total_rows`) as an *entry* index into `self.logs` -
+    /// an approximation, since mapping a row offset back to the entry index
+    /// it falls within would need re-wrapping every entry above it. Only
+    /// affects how far back one keypress jumps, not whether output is
+    /// visible/current, so left as-is rather than adding that cost here.
     fn jump_to_previous_error(&mut self) {
         if self.logs.is_empty() {
             return;
@@ -992,8 +1018,8 @@ impl AppState {
     }
 
     fn trim_logs(&mut self) {
-        if self.logs.len() > 200 {
-            let overflow = self.logs.len() - 200;
+        if self.logs.len() > MAX_LOG_ENTRIES {
+            let overflow = self.logs.len() - MAX_LOG_ENTRIES;
             self.logs.drain(0..overflow);
         }
 
@@ -1099,6 +1125,44 @@ const MAX_TOOL_ROUNDS: u32 = 4;
 /// slow hardware.
 const CHAT_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// Sampling temperature for chat completions. Lower than Ollama's per-model
+/// default (commonly ~0.7-0.8) specifically to make tool-calling decisions
+/// more consistent - empirically (see `TOOL_USE_REMINDER`'s doc), even a
+/// model fine-tuned for tool use skips calling one for a state question a
+/// meaningful fraction of the time at default temperature, especially once
+/// prior conversation turns are in context; a lower temperature doesn't
+/// eliminate that on its own, but cuts run-to-run variance enough that the
+/// reminder below reliably lands instead of being a coin flip.
+const CHAT_TEMPERATURE: f32 = 0.2;
+
+/// Appended to the outgoing copy of the latest user message only (not to
+/// what's displayed or saved to the session - see its use in the request
+/// loop) to counter an observed failure mode: a local model, even one
+/// fine-tuned for tool use (`llama3-groq-tool-use`), reliably stops calling
+/// tools for state questions ("list the containers") once even one prior
+/// assistant turn with no tool call is already in its context - confirmed by
+/// hand-crafting the exact request Ollama's `/api/chat` receives and
+/// replaying it directly: identical multi-turn history with vs. without this
+/// reminder line was the difference between 0/3 and 5/5 tool calls across
+/// repeated runs. Cheaper and more reliable than trying to prevent
+/// untool-called replies from ever entering history (MCP has no
+/// `tool_choice: required` equivalent to force this outright - checked, not
+/// supported by this Ollama version).
+const TOOL_USE_REMINDER: &str =
+    "\n\n(Answer by calling the matching tool now - do not answer from memory or a previous turn.)";
+
+/// Cap on how many *saved* messages (`session.messages`, persisted across
+/// app restarts with no automatic expiry) are replayed into a chat request -
+/// independent of `MAX_LOG_ENTRIES`, which only bounds the CLI Output
+/// display. A long-lived session accumulates without limit (108 messages
+/// deep was observed in practice after a day of testing); the more of that
+/// accumulates as "assistant" turns that didn't call a tool, the harder
+/// `TOOL_USE_REMINDER`/`CHAT_TEMPERATURE` have to fight just to get back to
+/// the reliability a fresh conversation already has for free. This trims
+/// what's *sent*, not what's *saved* - `session.messages` itself, and the
+/// full CLI Output/log file, are unaffected.
+const MAX_HISTORY_MESSAGES: usize = 12;
+
 /// Build the Ollama tool definitions for every tool `toolset` exposes, from
 /// the same JSON-schema metadata an MCP client would see via `tools/list`.
 /// `ollama-rs`'s `ToolInfo`/`ToolFunctionInfo` are plain public structs, so
@@ -1181,9 +1245,17 @@ fn spawn_chat_worker(
         // a docker build's output) straight to the CLI Output panel as it
         // happens, instead of the panel sitting idle for the whole call and
         // then dumping everything at once when `call_by_name` returns.
+        // `live_line_count` tracks whether *this* call streamed anything, so
+        // the "[MCP] Result: ..." line after it doesn't repeat the same
+        // dozens of lines a second time in full - a docker build otherwise
+        // shows up twice back to back in the CLI Output, once live and once
+        // as one large dump.
+        let live_line_count = Arc::new(AtomicUsize::new(0));
         let tool_live: crate::mcp::LiveReporter = {
             let tx = tx.clone();
+            let live_line_count = live_line_count.clone();
             Arc::new(move |line: &str| {
+                live_line_count.fetch_add(1, Ordering::Relaxed);
                 let _ = tx.send(ProcEvent::McpActivity(line.to_string()));
             })
         };
@@ -1207,7 +1279,8 @@ fn spawn_chat_worker(
             if let Some(system) = &system_prompt {
                 messages.push(ChatMessage::system(system.clone()));
             }
-            for msg in &session.messages {
+            let history_start = session.messages.len().saturating_sub(MAX_HISTORY_MESSAGES);
+            for msg in &session.messages[history_start..] {
                 match msg.role.as_str() {
                     "user" => messages.push(ChatMessage::user(msg.content.clone())),
                     "assistant" => messages.push(ChatMessage::assistant(msg.content.clone())),
@@ -1215,7 +1288,12 @@ fn spawn_chat_worker(
                     _ => {}
                 }
             }
-            messages.push(ChatMessage::user(req_message.clone()));
+            // The reminder is only in the copy sent to the model - `req_message`
+            // (used below for the CLI Output panel and the saved session) stays
+            // exactly what the user typed.
+            messages.push(ChatMessage::user(format!(
+                "{req_message}{TOOL_USE_REMINDER}"
+            )));
 
             // Ground truth for whether this reply is backed by an actual tool
             // call, or is just the model talking - a small local model will
@@ -1229,7 +1307,8 @@ fn spawn_chat_worker(
                 rt.block_on(async {
                     for _ in 0..MAX_TOOL_ROUNDS {
                         let request = ChatMessageRequest::new(model.clone(), messages.clone())
-                            .tools(tools.clone());
+                            .tools(tools.clone())
+                            .options(ModelOptions::default().temperature(CHAT_TEMPERATURE));
                         let response = tokio::time::timeout(
                             CHAT_REQUEST_TIMEOUT,
                             ollama.send_chat_messages(request),
@@ -1257,6 +1336,7 @@ fn spawn_chat_worker(
                                 "[MCP] Calling {}({})",
                                 name, call.function.arguments
                             )));
+                            live_line_count.store(0, Ordering::Relaxed);
                             let text = match toolset
                                 .call_by_name(
                                     &name,
@@ -1268,8 +1348,16 @@ fn spawn_chat_worker(
                                 Ok(result) => call_tool_result_text(&result),
                                 Err(err) => format!("Error: {err}"),
                             };
-                            let _ =
-                                tx.send(ProcEvent::McpActivity(format!("[MCP] Result: {}", text)));
+                            // The full result still goes to the model
+                            // (`messages.push` below) regardless - only the
+                            // CLI Output line is shortened when the call
+                            // already streamed its own progress live.
+                            let result_line = if live_line_count.load(Ordering::Relaxed) > 0 {
+                                "[MCP] Result: (see the streamed output above)".to_string()
+                            } else {
+                                format!("[MCP] Result: {}", text)
+                            };
+                            let _ = tx.send(ProcEvent::McpActivity(result_line));
                             messages.push(ChatMessage::tool(text));
                         }
                     }
@@ -2223,17 +2311,21 @@ fn event_loop(
                 })
                 .collect();
 
-            // Approximate: counts log entries, not the visual rows they wrap
-            // into (the Paragraph below wraps long lines). Good enough for
-            // paging/follow purposes; a long wrapped entry near the bottom
-            // may need an extra scroll tick to fully reach.
             app.output_view_lines = middle[1].height.saturating_sub(2) as usize;
-            app.clamp_output_scroll();
 
             let output = Paragraph::new(log_lines)
                 .block(plain_block("CLI Output".to_string()))
-                .wrap(Wrap { trim: false })
-                .scroll((app.output_scroll, 0));
+                .wrap(Wrap { trim: false });
+            // `output_scroll` is a wrapped-*row* offset once `Wrap` is on,
+            // not a log-*entry* offset - `line_count` (ratatui's own wrap
+            // calculation, not an approximation) is what `max_output_scroll`
+            // needs to follow/page against the true rendered bottom instead
+            // of stopping short whenever a long line (a docker build command,
+            // say) wraps into more than one row. Must run before `.scroll()`
+            // below, which consumes `output` to attach the now-correct offset.
+            app.output_total_rows = output.line_count(middle[1].width).max(1);
+            app.clamp_output_scroll();
+            let output = output.scroll((app.output_scroll, 0));
 
             let keys_text = match app.focus {
                 Focus::Dashboard => {
