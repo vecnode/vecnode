@@ -135,6 +135,15 @@ enum LogEntry {
     Error(String),
     Stdout(String),
     Stderr(String),
+    /// One line from a `ProcEvent::McpActivity` event - a `[MCP] Calling
+    /// .../[MCP] Result: ...` tag line, or one of the (untagged)
+    /// continuation lines `split_to_entries` breaks a multi-line result
+    /// (e.g. a table) into. Its own variant, not `Info`, so every line an
+    /// MCP tool call produced renders in the same Magenta - previously only
+    /// the one line that happened to literally start with `[MCP]` got
+    /// colored, leaving every other line from that same call grey with no
+    /// visual link back to it.
+    Mcp(String),
 }
 
 enum Focus {
@@ -296,6 +305,7 @@ impl AppState {
             LogEntry::Error(text) => format!("[{}] ERROR | {}", ts, text),
             LogEntry::Stdout(text) => format!("[{}] OUT   | {}", ts, text),
             LogEntry::Stderr(text) => format!("[{}] ERR   | {}", ts, text),
+            LogEntry::Mcp(text) => format!("[{}] MCP   | {}", ts, text),
         };
 
         let _ = writeln!(file, "{}", line);
@@ -887,7 +897,7 @@ impl AppState {
                 ProcEvent::McpActivity(text) => self.extend_log(
                     split_to_entries(text, false)
                         .into_iter()
-                        .map(LogEntry::Info),
+                        .map(LogEntry::Mcp),
                 ),
             }
         }
@@ -2299,6 +2309,17 @@ fn event_loop(
                         // unchanged below. `**bold**` markers (common in AI
                         // replies) render bold instead of literal asterisks.
                         Line::from(spans_for_stdout_line(text))
+                    } else if let LogEntry::Mcp(text) = entry {
+                        // Every line an MCP tool call produced defaults to
+                        // Magenta - not just the one line that happens to
+                        // literally start with "[MCP]" - unless it carries
+                        // its own more specific tag (a live-streamed docker
+                        // build's "[DOCKER]" lines stay Blue, matching those
+                        // same lines outside of MCP).
+                        Line::from(spans_with_bold(
+                            text,
+                            Style::default().fg(tagged_line_color(text, Color::Magenta)),
+                        ))
                     } else {
                         match entry {
                             LogEntry::Info(text) => Line::from(spans_with_bold(

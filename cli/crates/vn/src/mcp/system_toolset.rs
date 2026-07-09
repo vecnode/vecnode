@@ -13,6 +13,7 @@
 //! app" or "one docker container". `system_list_processes` is read-only, so
 //! it doesn't go through [`ApprovalGate`](crate::mcp::approval::ApprovalGate).
 
+use crate::mcp::report::format_table;
 use crate::mcp::AppsToolset;
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{CallToolResult, ContentBlock};
@@ -95,7 +96,7 @@ fn list_processes_text(filter: Option<String>) -> String {
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
-    let mut rows: Vec<(u32, String)> = Vec::new();
+    let mut rows: Vec<(u32, Vec<String>)> = Vec::new();
     for (pid, process) in system.processes() {
         let name = process.name().to_string_lossy().to_string();
         let exe = process
@@ -120,16 +121,15 @@ fn list_processes_text(filter: Option<String>) -> String {
 
         rows.push((
             pid.as_u32(),
-            format!(
-                "{}\t{}\t{}\t{:?}\t{}MB\t{}s\t{}",
-                pid.as_u32(),
+            vec![
+                pid.as_u32().to_string(),
                 name,
                 parent,
-                process.status(),
-                memory_mb,
-                uptime_secs,
+                format!("{:?}", process.status()),
+                format!("{memory_mb}MB"),
+                format!("{uptime_secs}s"),
                 exe,
-            ),
+            ],
         ));
     }
 
@@ -141,12 +141,22 @@ fn list_processes_text(filter: Option<String>) -> String {
     let total = rows.len();
     rows.truncate(MAX_ROWS);
 
-    let mut lines = vec!["PID\tNAME\tPPID\tSTATUS\tMEMORY\tUPTIME\tEXE".to_string()];
-    lines.extend(rows.into_iter().map(|(_, line)| line));
+    let mut table_rows = vec![vec![
+        "PID".to_string(),
+        "NAME".to_string(),
+        "PPID".to_string(),
+        "STATUS".to_string(),
+        "MEMORY".to_string(),
+        "UPTIME".to_string(),
+        "EXE".to_string(),
+    ]];
+    table_rows.extend(rows.into_iter().map(|(_, row)| row));
+
+    let mut text = format_table(&table_rows);
     if total > MAX_ROWS {
-        lines.push(format!(
-            "... truncated to {MAX_ROWS} of {total} matching processes; pass `filter` to narrow the results."
+        text.push_str(&format!(
+            "\n... truncated to {MAX_ROWS} of {total} matching processes; pass `filter` to narrow the results."
         ));
     }
-    lines.join("\n")
+    text
 }
