@@ -97,6 +97,16 @@ cargo clippy --manifest-path cli/Cargo.toml -p vn
 cargo fmt --manifest-path cli/Cargo.toml
 ```
 
+**`run_cli.bat` does not build into `cli/target/debug/`.** It detects the host triple
+(`rustc -vV`) and runs `cargo build --target "%RUST_HOST%"`, producing a *separate* binary
+at `cli/target/<host-triple>/debug/vn.exe` - a plain `cargo build` (no `--target`) writes to
+`cli/target/debug/vn.exe` instead, a different file with its own independent build cache.
+Rebuilding/testing against one does not update or verify the other, and cargo won't warn you
+- it just reports the untouched one as already up to date. If you're validating a fix meant
+to land in what the user's launcher actually runs, rebuild with the matching `--target`
+(`rustc -vV | findstr host` for the triple) or just re-run `run_cli.bat` itself, not a bare
+`cargo build`.
+
 There is no test suite yet. **Always `cargo build` (and ideally `clippy`) after Rust
 changes**; the TUI is hard to exercise headlessly. CI
 ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `cargo fmt --check`, `clippy
@@ -126,6 +136,30 @@ quitting the TUI; `e` scrolls the CLI Output panel to the previous error/stderr 
 Dashboard — `q` still quits immediately from anywhere in the Dashboard. Mouse wheel
 scrolls CLI Output; left-clicking a dashboard row selects and runs it. `**bold**` markers
 in CLI Output text (common in AI replies) render bold via `spans_with_bold`.
+
+**CLI Output scroll is in wrapped *rows*, not log *entries*.** The `Paragraph` is rendered
+with `Wrap { trim: false }`, and ratatui's own wrap calculation treats `.scroll()`'s offset
+as a rendered-row count - a single long line (a docker build command, easily 300+ characters)
+wraps into several rows. `AppState::output_total_rows` (via ratatui's
+`Paragraph::line_count`, gated behind the `unstable-rendered-line-info` cargo feature - not
+an approximation, the exact same wrap calculation the render call itself uses) is what
+`max_output_scroll`/`clamp_output_scroll` need to compute "scroll to the true bottom" against
+- using `self.logs.len()` (entry count) there was a real bug: following new output would
+visibly stop short of the actual tail whenever enough wrapped lines had accumulated above the
+current position, looking like the panel had "frozen" until an unrelated scroll/resize
+happened to close the gap. `jump_to_previous_error` still treats `output_scroll` as an entry
+index into `self.logs` (a known, documented approximation - only affects how far back one
+keypress jumps, not whether new output is visible).
+
+**Report-based tool calls no longer double-log their own output.** A tool built on
+`run_reported`/`LiveReporter` (an `open_app` docker build, `docker_stop_all`, etc.) used to
+print every line twice: once live as it streamed, then again in full inside the final
+`[MCP] Result: ...` message (`call_tool_result_text` returns the same joined text regardless
+of whether it was already streamed). `spawn_chat_worker` now tracks whether `tool_live` was
+invoked at all during a given call (`live_line_count`, reset before each call) and prints a
+short "(see the streamed output above)" placeholder instead of the full text when it was -
+the *full* text is still what's fed back to the model via `ChatMessage::tool(text)`
+regardless; only the CLI Output/log line is shortened.
 
 **Nothing that can block should run on the render loop.** Spawned commands, the Ollama
 chat worker, and the embedded MCP server each own a dedicated OS thread (or tokio runtime)
@@ -360,6 +394,35 @@ call into generating a runaway reply) would otherwise block the single chat-work
 forever with no error and no crash, which looks like "the CLI Output panel just stopped"
 rather than an obvious hang, since the rest of the TUI runs on other threads and stays
 responsive.
+
+**Nudging the model to actually call tools:** confirmed by hand-crafting the exact
+`/api/chat` request and replaying it directly against Ollama (bypassing this codebase
+entirely) - even a model fine-tuned for tool use (`llama3-groq-tool-use`) reliably *stops*
+calling tools for a state question ("list the containers") once even one prior assistant
+turn with no tool call is already in its context; repeated runs of the identical multi-turn
+request went from 0/3 to 5/5 tool calls with two changes: (1) `CHAT_TEMPERATURE` (0.2,
+lower than a model's usual ~0.7-0.8 default) cuts run-to-run variance, and (2)
+`TOOL_USE_REMINDER` is appended to the *outgoing* copy of the latest user message only (not
+to what's displayed or saved to the session - `req_message` stays exactly what the user
+typed) telling the model to answer by calling a tool rather than from memory. Ollama has no
+`tool_choice: required` equivalent to force this outright (checked against a running 0.31.1
+server) - this is a mitigation, not a guarantee. It was validated against a short (1-2 turn)
+history; a real session's persisted history has no automatic expiry and was observed to reach
+108 messages after a day of use, which the reminder alone isn't strong enough to overcome -
+see `MAX_HISTORY_MESSAGES` below, which addresses that directly. (Also: this mitigation only
+takes effect once you're running a binary actually built *after* the fix landed - see the
+`run_cli.bat` build-target note above. Verifying against a plain `cargo build`'s output while
+`run_cli.bat` launches a separately-cached `--target`-specific binary is exactly how this got
+missed the first time.)
+
+**Bounding how much history reaches the model:** `MAX_HISTORY_MESSAGES` (12) caps how many of
+`session.messages` are replayed into a chat request, independent of `MAX_LOG_ENTRIES` (which
+only bounds the CLI Output display) and independent of the session file itself (which keeps
+growing - `session.messages.clear()` only ever runs on `ChatRequest::ResetSession`, i.e. an
+in-run model switch, not automatically). The more of a long-lived session's history consists
+of tool-call-free replies, the more it anchors the model away from calling tools at all
+(regardless of `TOOL_USE_REMINDER`) - trimming what's *sent* keeps that bounded without
+touching what's *saved*.
 
 **Ground truth for hallucinated tool use:** a small local model will sometimes claim to have
 done something ("restarted the container!") in its final reply without actually calling any
