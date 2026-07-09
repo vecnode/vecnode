@@ -452,6 +452,15 @@ line, and the render loop (`spans_for_stdout_line` in
 the same Magenta as `[MCP]` activity lines, rather than the reply's normal DIM tone - on its
 own line and separately colored so it reads as a distinct marker, not part of the message.
 
+**`OLLAMA_MARKER` (`[OLLAMA]`)** wraps every chat reply, one on its own line before and one
+after (`"{OLLAMA_MARKER}\n{model}: {reply}\n{OLLAMA_MARKER}"`), purely so the reply's
+start/end are visually obvious once other output (MCP activity, docker build lines) has
+scrolled by in between turns. Unlike `MCP_NONE_TAG`, this is display-only - added *after*
+`session.append_assistant` so it's never saved into history or fed back to the model, since
+it carries no information worth the model seeing. Renders in the same DIM grey as the reply
+body with no special-casing needed: it just doesn't match `[MCP]`/`[DOCKER]` in
+`tagged_line_color`, so it falls through to that function's default.
+
 **Session reset on model switch:** the persisted "tui" session (one file, loaded once when
 `spawn_chat_worker` starts) used to survive switching the active model in the "Select Model"
 menu - a newly-selected model would inherit whatever the *previous* model said, including

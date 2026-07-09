@@ -1408,7 +1408,10 @@ fn spawn_chat_worker(
                         ))));
                         continue;
                     }
-                    let _ = tx.send(ProcEvent::ChatReply(Ok(format!("{}: {}", model, reply))));
+                    let _ = tx.send(ProcEvent::ChatReply(Ok(format!(
+                        "{OLLAMA_MARKER}\n{}: {}\n{OLLAMA_MARKER}",
+                        model, reply
+                    ))));
                 }
                 Err(err) => {
                     let _ = tx.send(ProcEvent::ChatReply(Err(format!(
@@ -1428,6 +1431,17 @@ fn spawn_chat_worker(
 /// activity lines' color, so it reads as a distinct marker line rather than
 /// part of the message.
 const MCP_NONE_TAG: &str = "[MCP: NONE]";
+
+/// Wraps a chat reply, one on its own line before and one after (see its use
+/// in `spawn_chat_worker`), purely so the reply's start/end are visually
+/// obvious in the CLI Output panel once other output (MCP activity, docker
+/// build lines) has scrolled by in between chat turns. Display-only - not
+/// saved to the session, since it carries no information the model itself
+/// would benefit from seeing in later turns (unlike `MCP_NONE_TAG`). Doesn't
+/// match `[MCP]`/`[DOCKER]` in `tagged_line_color`, so it already renders in
+/// the same DIM grey as the reply body via that function's fallback - no
+/// special-casing needed for the color, only for placement.
+const OLLAMA_MARKER: &str = "[OLLAMA]";
 
 /// Color-code CLI Output lines by their leading `[TAG]`, layered on top of
 /// (not replacing) the existing per-severity colors: only `Stdout`/`Info`
@@ -2490,6 +2504,17 @@ mod tests {
         let spans = spans_for_stdout_line("just a normal reply");
         assert_eq!(spans.len(), 1);
         assert_eq!(spans[0].content.to_string(), "just a normal reply");
+        assert_eq!(spans[0].style.fg, Some(DIM));
+    }
+
+    #[test]
+    fn spans_for_stdout_line_renders_ollama_marker_in_same_dim_as_reply_body() {
+        // OLLAMA_MARKER deliberately doesn't match `[MCP]`/`[DOCKER]` in
+        // tagged_line_color, so it should render identically to a plain
+        // reply line - same color, no special-casing needed for that part.
+        let spans = spans_for_stdout_line(OLLAMA_MARKER);
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].content.to_string(), "[OLLAMA]");
         assert_eq!(spans[0].style.fg, Some(DIM));
     }
 }
